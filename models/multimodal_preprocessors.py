@@ -135,6 +135,7 @@ class PatchEmbedGeneric(nn.Module):
         self.norm_layer = norm_layer
 
     def get_patch_layout(self, img_size):
+        # [3,224,224]
         with torch.no_grad():
             dummy_img = torch.zeros(
                 [
@@ -142,7 +143,10 @@ class PatchEmbedGeneric(nn.Module):
                 ]
                 + img_size
             )
+            # [1,3,224,224]
             dummy_out = self.proj(dummy_img)
+            # PadIm2Video: [1,3,224,224] -> [1,3,2,224,224]
+            #Conv3d 3->1024 kernel=(2, 14, 14) : [1,3,2,224,224] -> [1, 1024, 1, 16, 16]
         embed_dim = dummy_out.shape[1]
         patches_layout = tuple(dummy_out.shape[2:])
         num_patches = np.prod(patches_layout)
@@ -151,7 +155,10 @@ class PatchEmbedGeneric(nn.Module):
     def forward(self, x):
         x = self.proj(x)
         # B C (T) H W -> B (T)HW C
+        # PadIm2Video: [1,3,224,224] -> [1,3,2,224,224]
+        #Conv3d 3->1024 kernel=(2, 14, 14) : [1,3,2,224,224] -> [1, 1024, 1, 16, 16]
         x = x.flatten(2).transpose(1, 2)
+        # [1, 1024, 1, 16, 16] -> [1, 256, 1024]
         if self.norm_layer is not None:
             x = self.norm_layer(x)
         return x
@@ -191,7 +198,9 @@ class SpatioTemporalPosEmbeddingHelper(VerboseNNModule):
         )
         return pos_embed
 
-
+# img_size=[3, 2, 224, 224] or [3, 224, 224]
+# return [1,256,1024]
+# called PatchEmbedGeneric with positional embedding
 class RGBDTPreprocessor(VerboseNNModule):
     def __init__(
         self,

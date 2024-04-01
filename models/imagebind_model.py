@@ -128,6 +128,8 @@ class ImageBindModel(nn.Module):
             out_embed_dim
         )
 
+    # preprocessors for each modality
+    # image (1,3,224,224) or (1,3,2,224,224) ->[1, 257, 1024]
     def _create_modality_preprocessors(
         self,
         video_frames=2,
@@ -262,6 +264,7 @@ class ImageBindModel(nn.Module):
 
         return nn.ModuleDict(modality_preprocessors)
 
+    # transformer trunk for each modality
     def _create_modality_trunks(
         self,
         vision_embed_dim=1024,
@@ -363,6 +366,7 @@ class ImageBindModel(nn.Module):
 
         return nn.ModuleDict(modality_trunks)
 
+    # input modality embedding -> output embedding
     def _create_modality_heads(
         self,
         out_embed_dim,
@@ -440,7 +444,29 @@ class ImageBindModel(nn.Module):
         )
 
         return nn.ModuleDict(modality_postprocessors)
-
+    
+    @torch.no_grad()
+    def layer_shapes(self,input_image):
+        print("input",input_image.shape)
+        modality_value=self.modality_preprocessors[ModalityType.VISION](**{ModalityType.VISION: input_image})
+        trunk_inputs = modality_value["trunk"]
+        head_inputs = modality_value["head"]
+        print("trunk_inputs shape",trunk_inputs["tokens"].shape)
+        
+        modality_value = self.modality_trunks[ModalityType.VISION](**trunk_inputs)
+        print("after trunk shape",modality_value.shape)
+        
+        modality_value = self.modality_heads[ModalityType.VISION](
+            modality_value, **head_inputs
+        )
+        print("after head shape",modality_value.shape)
+        
+        modality_value = self.modality_postprocessors[ModalityType.VISION](
+            modality_value
+        )
+        print("postprocessor shape",modality_value.shape)
+        return 
+    
     def forward(self, inputs):
         outputs = {}
         for modality_key, modality_value in inputs.items():
