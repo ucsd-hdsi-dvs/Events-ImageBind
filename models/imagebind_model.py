@@ -450,22 +450,22 @@ class ImageBindModel(nn.Module):
         return nn.ModuleDict(modality_postprocessors)
     
     @torch.no_grad()
-    def layer_shapes(self,input_image):
+    def layer_shapes(self,input_image,modality_type=ModalityType.VISION):
         print("input",input_image.shape)
-        modality_value=self.modality_preprocessors[ModalityType.VISION](**{ModalityType.VISION: input_image})
+        modality_value=self.modality_preprocessors[modality_type](**{modality_type: input_image})
         trunk_inputs = modality_value["trunk"]
         head_inputs = modality_value["head"]
         print("trunk_inputs shape",trunk_inputs["tokens"].shape)
         
-        modality_value = self.modality_trunks[ModalityType.VISION](**trunk_inputs)
+        modality_value = self.modality_trunks[modality_type](**trunk_inputs)
         print("after trunk shape",modality_value.shape)
         
-        modality_value = self.modality_heads[ModalityType.VISION](
+        modality_value = self.modality_heads[modality_type](
             modality_value, **head_inputs
         )
         print("after head shape",modality_value.shape)
         
-        modality_value = self.modality_postprocessors[ModalityType.VISION](
+        modality_value = self.modality_postprocessors[modality_type](
             modality_value
         )
         print("postprocessor shape",modality_value.shape)

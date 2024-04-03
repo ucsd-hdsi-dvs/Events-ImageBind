@@ -50,7 +50,7 @@ class EventModel:
         event_num_blocks=12,
         event_num_heads=12,
         event_drop_path=0.0,
-        out_embed_dim=768):
+        out_embed_dim=1024):
         
         self.event_preprocessor = self.create_event_preprocessor(event_embed_dim=event_embed_dim,event_kernel_size=event_kernel_size)
         self.event_trunk = self.create_event_trunk(event_embed_dim=event_embed_dim,event_num_blocks=event_num_blocks,
@@ -141,9 +141,33 @@ class EventModel:
     def apply_events_modality_postprocessor(self):
         return nn.ModuleDict({"event":self.event_postprocessor})
     
-    def apply_event_layers(self,model):
+    def load_weights(self,path='../.checkpoints/imagebind_huge.pth'):
+        state_dict = torch.load(path)
+        preprocessor_weights=[key for key in state_dict.keys() if key.startswith("modality_preprocessors.thermal")]
+        trunk_weights=[key for key in state_dict.keys() if key.startswith("modality_trunks.thermal")]
+        head_weights=[key for key in state_dict.keys() if key.startswith("modality_heads.thermal")]
+        postprocessor_weights=[key for key in state_dict.keys() if key.startswith("modality_postprocessors.thermal")]
+        
+        def load_layer(layer,weights_list):
+            model_state_dict = layer.state_dict()
+            
+            for w in weights_list:
+                w_name=w.split(".")[2:]
+                model_state_dict[".".join(w_name)]=state_dict[w]
+            layer.load_state_dict(model_state_dict)
+        
+        load_layer(self.event_preprocessor,preprocessor_weights)
+        load_layer(self.event_trunk,trunk_weights)
+        load_layer(self.event_head,head_weights)
+        load_layer(self.event_postprocessor,postprocessor_weights)
+            
+    
+    def apply_event_layers(self,model,path='../.checkpoints/imagebind_huge.pth'):
         # check model is instance of image bind model
         assert isinstance(model,ImageBindModel)
+        
+        # load weights for each layers
+        self.load_weights(path)
         
         # apply events modality to each layer
         model.modality_preprocessors.update(self.apply_events_modality_preprocessor())
