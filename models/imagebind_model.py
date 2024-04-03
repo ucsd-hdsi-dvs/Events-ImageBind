@@ -33,6 +33,10 @@ ModalityType = SimpleNamespace(
     IMU="imu",
 )
 
+# modality_preprocessors, nn.ModuleDict, preprocessors for each modality
+# modality_trunks, nn.ModuleDict, transformer trunk for each modality
+# modality_heads, nn.ModuleDict, input modality embedding -> output embedding
+# modality_postprocessors, nn.ModuleDict, output embedding -> output embedding
 
 class ImageBindModel(nn.Module):
     def __init__(

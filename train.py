@@ -73,10 +73,13 @@ class ImageBindTrain(L.LightningModule):
                 modality_preprocessor.requires_grad_(False)
             for modality_trunk in self.model.modality_trunks.children():
                 modality_trunk.requires_grad_(False)
-                
+            
+            # add LoRA trunks to the model
             self.model.modality_trunks.update(LoRA.apply_lora_modality_trunks(self.model.modality_trunks, rank=lora_rank,
                                                                               layer_idxs=lora_layer_idxs,
                                                                               modality_names=lora_modality_names))
+            
+            # Load LoRA checkpoint
             LoRA.load_lora_modality_trunks(self.model.modality_trunks, checkpoint_dir=lora_checkpoint_dir)
 
             # Load postprocessors & heads
@@ -84,6 +87,7 @@ class ImageBindTrain(L.LightningModule):
                         checkpoint_dir=lora_checkpoint_dir)
             load_module(self.model.modality_heads, module_name="heads",
                         checkpoint_dir=lora_checkpoint_dir)
+        # require grad for last layer of each modality head
         elif linear_probing:
             for modality_preprocessor in self.model.modality_preprocessors.children():
                 modality_preprocessor.requires_grad_(False)

@@ -20,6 +20,7 @@ from torch.nn.parameter import Parameter
 from models.transformer import SimpleTransformer
 
 
+
 def apply_lora_modality_trunks(modality_trunks: Dict[str, SimpleTransformer], rank: int,
                                layer_idxs: Optional[Dict[SimpleNamespace, List[int]]] = None,
                                modality_names: List[SimpleNamespace] = None):
