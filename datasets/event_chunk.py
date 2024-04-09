@@ -44,18 +44,39 @@ def hot_pixel_filter(events, frame_size=(260, 346), thres_percentile=99):
     Returns:
         events_filtered: ndarray, shape: (?, 4), filtered events.
     """
+    # h, w = frame_size
+
+    # hotpixelarray = aggregate(events[:, 1:3].T, np.ones_like(
+    #     events[:, 0]), func='sum', size=(w, h), fill_value=0)
+    # threventhotpixel = np.percentile(hotpixelarray.flatten(), thres_percentile)
+    # selindexarray = hotpixelarray >= threventhotpixel
+    # [hpx, hpy] = np.nonzero(selindexarray.astype(int))
+    # fs = np.array((hpx, hpy)).T
+
+    # events_filtered = events[~(events[:, 1:3] == fs[:, None]).all(-1).any(axis=0)]
+    # return events_filtered
     h, w = frame_size
-
-    hotpixelarray = aggregate(events[:, 1:3].T, np.ones_like(
-        events[:, 0]), func='sum', size=(w, h), fill_value=0)
+    hotpixelarray = np.zeros(frame_size, dtype=np.int)
+    for x, y in zip(events['x'], events['y']):
+        if 0 <= x < w and 0 <= y < h:
+            hotpixelarray[y, x] += 1
     threventhotpixel = np.percentile(hotpixelarray.flatten(), thres_percentile)
-    selindexarray = hotpixelarray >= threventhotpixel
-    [hpx, hpy] = np.nonzero(selindexarray.astype(int))
-    fs = np.array((hpx, hpy)).T
-
-    events_filtered = events[~(events[:, 1:3] == fs[:, None]).all(-1).any(axis=0)]
+    
+    # event_counts = hotpixelarray.flatten()
+    # mean_count = np.mean(event_counts)
+    # median_count = np.median(event_counts)
+    # std_dev = np.std(event_counts)
+    # threventhotpixel = max(np.percentile(event_counts, thres_percentile),median_count+50)
+    
+    selindexarray = hotpixelarray > threventhotpixel
+    hpx, hpy = np.nonzero(selindexarray.astype(int))
+    mask = np.ones(len(events), dtype=bool)  # Start with all True
+    for x, y in zip(hpy, hpx):
+        mask &= ~((events['x'] == x) & (events['y'] == y))
+    events_filtered = events[mask]
     return events_filtered
-
+    
+    
 def event_frame():
     raise NotImplementedError
 
@@ -146,11 +167,11 @@ def event_chunk(path, out_dir, frames_per_sequence=16, prefix='sequence'):
 
                 # save a dictionary of the sequence
                 sequence = {
-                    'images': np.stack(frame_images),
+                    'images': np.stack(frame_images[:-1]),
                     'events': frame_events[:-1],
                     # 'accelerometers': np.vstack(frame_accelerometers),
                     # 'gyroscopes': np.vstack(frame_gyroscopes),
-                    'timestamps': np.array(frame_timestamp_used)
+                    'timestamps': np.array(frame_timestamp_used[:-1])
                 }
                 # save the sequence
                 filename = op.join(out_dir, f'{prefix}-{sequence_count}.pkl')

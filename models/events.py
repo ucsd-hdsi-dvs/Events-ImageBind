@@ -141,12 +141,12 @@ class EventModel:
     def apply_events_modality_postprocessor(self):
         return nn.ModuleDict({"event":self.event_postprocessor})
     
-    def load_weights(self,path='../.checkpoints/imagebind_huge.pth'):
+    def load_weights(self,path='../.checkpoints/imagebind_huge.pth',modality="thermal"):
         state_dict = torch.load(path)
-        preprocessor_weights=[key for key in state_dict.keys() if key.startswith("modality_preprocessors.thermal")]
-        trunk_weights=[key for key in state_dict.keys() if key.startswith("modality_trunks.thermal")]
-        head_weights=[key for key in state_dict.keys() if key.startswith("modality_heads.thermal")]
-        postprocessor_weights=[key for key in state_dict.keys() if key.startswith("modality_postprocessors.thermal")]
+        preprocessor_weights=[key for key in state_dict.keys() if key.startswith(f"modality_preprocessors.{modality}")]
+        trunk_weights=[key for key in state_dict.keys() if key.startswith(f"modality_trunks.{modality}")]
+        head_weights=[key for key in state_dict.keys() if key.startswith(f"modality_heads.{modality}")]
+        postprocessor_weights=[key for key in state_dict.keys() if key.startswith(f"modality_postprocessors.{modality}")]
         
         def load_layer(layer,weights_list):
             model_state_dict = layer.state_dict()
