@@ -115,7 +115,7 @@ class VideoDataset(Dataset):
             frame1 = frame2  # Set the second frame as the first for the next iteration
             count += 1
         cap.release()
-        return torch.stack(frames)
+        return torch.stack(frames) # L,C,T,H,W
         
 
 class VideoDataModule(pl.LightningDataModule):
@@ -140,6 +140,6 @@ class VideoDataModule(pl.LightningDataModule):
         videos = [item[0] for item in batch]
         labels = [item[1] for item in batch]
         # B, C, T, H, W
-        return torch.stack(videos), torch.tensor(labels)
+        return videos, torch.tensor(labels)
         
         
