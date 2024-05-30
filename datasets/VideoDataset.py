@@ -1,13 +1,12 @@
 import os
 from typing import Optional, Callable
-from pytorch_lightning.utilities.types import TRAIN_DATALOADERS
 from torch.utils.data import Dataset
 import pandas as pd
 import numpy as np
 import cv2
 import torch
 from torchvision import transforms
-import pytorch_lightning as pl
+import lightning as pl
 from torch.utils.data import DataLoader
 
 
@@ -119,22 +118,22 @@ class VideoDataset(Dataset):
         
 
 class VideoDataModule(pl.LightningDataModule):
-    def __init__(self, csv_path, batch_size=2, frame_step=2):
+    def __init__(self, csv_path, batch_size=1, frame_step=2):
         self.csv_path = csv_path
         self.batch_size = batch_size
         self.frame_step = frame_step
     
-    def train_dataloader(self) -> os.Any:
+    def train_dataloader(self):
         dataset=VideoDataset(mode='train', frame_step=self.frame_step, csv_path=self.csv_path)
-        return DataLoader(dataset, batch_size=self.batch_size, shuffle=True, collate_fn=self.collate_fn)
+        return DataLoader(dataset, batch_size=self.batch_size, shuffle=True, collate_fn=self.collate_fn, num_workers=4)
     
-    def val_dataloader(self) -> os.Any:
+    def val_dataloader(self):
         dataset=VideoDataset(mode='val', frame_step=self.frame_step, csv_path=self.csv_path)
-        return DataLoader(dataset, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn)
+        return DataLoader(dataset, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=4)
     
-    def test_dataloader(self) -> os.Any:
+    def test_dataloader(self):
         dataset=VideoDataset(mode='test', frame_step=self.frame_step, csv_path=self.csv_path)
-        return DataLoader(dataset, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn)
+        return DataLoader(dataset, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=4)
     
     def collate_fn(self, batch):
         videos = [item[0] for item in batch]

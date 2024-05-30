@@ -2,7 +2,7 @@ import torch
 from torchvision import transforms
 import numpy as np
 import torch
-from lightning import Metric
+from torchmetrics import Metric
 
 # label_map={'restrainer_interaction': 0, 'unsupported_rearing': 1,
 #            'running': 2, 'immobility': 3, 'idle_actions': 4, 

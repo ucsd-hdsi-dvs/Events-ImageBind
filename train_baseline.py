@@ -33,7 +33,7 @@ from models import imagebind_model
 from models.imagebind_model import ModalityType, load_module, save_module
 from pytorch_loss import FocalLossV3
 from eventutils import AccMetric,ConfusionMatrixMetric, multi_label_accuracy, custom_multi_label_pred, ground_truth_decoder
-
+from datasets.VideoDataset import VideoDataModule
 
 logging.basicConfig(level=logging.INFO, force=True)
 
@@ -42,7 +42,8 @@ LOG_ON_STEP = True
 LOG_ON_EPOCH = True
 
 class VideoTrain(L.LightningModule):
-    def __init__(self, num_classes=3,lstm_layers=1,hidden_dim=128,confusion_path='/tsukimi/datasets/Chiba/imagebind_baseline/confusion',prefix='firstrun'):
+    def __init__(self, num_classes=3,lstm_layers=1,hidden_dim=128,confusion_path='/tsukimi/datasets/Chiba/imagebind_baseline/confusion',prefix='firstrun',
+                 lr=5e-4, weight_decay=1e-4, max_epochs=500,momentum_betas=(0.9, 0.95)):
         super(VideoTrain, self).__init__()
         self.save_hyperparameters()
         self.num_classes = num_classes
@@ -62,20 +63,20 @@ class VideoTrain(L.LightningModule):
     def _get_feature_size(self):
         dummy_input = torch.zeros(
                 [
-                    1,
+                    1,1
                 ]
                 + [3,2, 224, 224]
             )
         with torch.no_grad():
-            features = self.imagebind(dummy_input)
-        return features.numel()
+            features = self.imagebind({"vision":dummy_input})
+        return features['vision'].shape[-1]
 
     def forward(self, x):
         # input shape: (batch, seq_len, 3, 2, 224, 224)
         logits = []
         for video in x: # video shape: (seq_len, 3, 2, 224, 224)
             with torch.no_grad():
-                video_embd = self.imagebind(video)  # (seq_len, feature_size)
+                video_embd = self.imagebind({"vision":video})  # (seq_len, feature_size)
             lstm_out, _ = self.lstm(video_embd.unsqueeze(0))  # (1, seq_len, hidden_dim) 
             logits.append(self.classifier(lstm_out[:, -1, :]).squeeze(0))  # (num_classes)
         return torch.stack(logits)
@@ -99,7 +100,7 @@ class VideoTrain(L.LightningModule):
         logits = self(videos)
         gt=ground_truth_decoder(labels)
         loss = self.criterion(logits, gt)
-        self.log('val_loss_'+'Focal_Loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
+        self.log('val_loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
         
         acc=multi_label_accuracy(logits, gt)
         self.log('val_acc', acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
@@ -179,19 +180,14 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train the ImageBind model with PyTorch Lightning and LoRA.")
     parser.add_argument("--seed", type=int, default=43, help="Random seed for reproducibility")
     parser.add_argument("--device", type=str, default="cuda", help="Device to use for training ('cpu' or 'cuda')")
-    parser.add_argument("--datasets_dir", type=str, default="./.datasets",
-                        help="Directory containing the datasets")
-    parser.add_argument("--datasets", type=str, nargs="+", default=["dreambooth"], choices=["dreambooth"],
-                        help="Datasets to use for training and validation")
     parser.add_argument("--full_model_checkpoint_dir", type=str, default="./.checkpoints/full",
                         help="Directory to save the full model checkpoints")
     parser.add_argument("--full_model_checkpointing", action="store_true", help="Save full model checkpoints")
     parser.add_argument("--loggers", type=str, nargs="+", choices=["tensorboard", "wandb", "comet", "mlflow"],
                         help="Loggers to use for logging")
     parser.add_argument("--loggers_dir", type=str, default="./.logs", help="Directory to save the logs")
-    parser.add_argument("--headless", action="store_true", help="Run in headless mode (Don't plot samples on start)")
 
-    parser.add_argument("--max_epochs", type=int, default=500, help="Maximum number of epochs to train")
+    parser.add_argument("--max_epochs", type=int, default=100, help="Maximum number of epochs to train")
     parser.add_argument("--batch_size", type=int, default=12, help="Batch size for training and validation")
     parser.add_argument("--lr", type=float, default=5e-6, help="Learning rate")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
@@ -253,4 +249,24 @@ if __name__ == "__main__":
     device_name = args.device  # "cuda:0" if torch.cuda.is_available() else "cpu"
     device = torch.device(device_name)
     
+    dataModule=VideoDataModule(csv_path='/tsukimi/datasets/Chiba/baseline/datalist_3',batch_size=args.batch_size)
+    train_loader=dataModule.train_dataloader()
+    val_loader=dataModule.val_dataloader()
+    
+    model=VideoTrain(num_classes=3,lstm_layers=args.lstm_layers,hidden_dim=args.hidden_dim,confusion_path=args.confusion_path,prefix=args.prefix,
+                     max_epochs=args.max_epochs,lr=args.lr, weight_decay=args.weight_decay, momentum_betas=args.momentum_betas)
+    if args.full_model_checkpointing:
+        checkpointing = {"enable_checkpointing": args.full_model_checkpointing,
+                         "callbacks": [ModelCheckpoint(monitor="val_acc", dirpath=args.full_model_checkpoint_dir,
+                                                        filename="imagebind-{epoch:02d}-{val_acc:.2f}",
+                                                        save_last=True, mode="max")]}
+    else:
+        checkpointing = {"enable_checkpointing": args.full_model_checkpointing,}
+    
+    trainer=Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
+                    devices=1 if ":" not in device_name else [int(device_name.split(":")[1])], deterministic=True,
+                      max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
+                      logger=loggers if loggers else None, **checkpointing)
+    
+    trainer.fit(model, train_loader, val_loader)
     
