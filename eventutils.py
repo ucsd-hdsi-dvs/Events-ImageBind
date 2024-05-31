@@ -27,7 +27,7 @@ def ground_truth_decoder(labels,num_classes=3):
     for i, label in enumerate(labels):
         parts = label.split('&')
         for part in parts:
-            decoded[i, label_map[part]] = 1
+            decoded[i, label_map[part]] = 1.0
     return decoded
 
 def custom_multi_label_pred(outputs,threshold=0.7):
@@ -240,12 +240,12 @@ def resize_pad(frame, size=224):
 class AccMetric(Metric):
     def __init__(self):
         super().__init__()
-        self.add_state("correct", default=torch.tensor(0), dist_reduce_fx="sum")
-        self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.add_state("correct", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("total", default=torch.tensor(0.0), dist_reduce_fx="sum")
     
     def update(self, preds, targets):
-        preds=preds.clone().to(self.device)
-        targets=targets.clone().to(self.device)
+        preds=preds.clone().to(self.device).float()
+        targets=targets.clone().to(self.device).float()
         
         double_one(preds)
         double_one(targets)
@@ -270,8 +270,8 @@ class ConfusionMatrixMetric(Metric):
         self.add_state("confusion_matrix", default=torch.zeros((num_classes,num_classes)), dist_reduce_fx="sum")
     
     def update(self, preds, targets):
-        pred_labels=preds.clone().to(self.device)
-        ground_truth_labels=targets.clone().to(self.device)
+        pred_labels=preds.clone().to(self.device).float()
+        ground_truth_labels=targets.clone().to(self.device).float()
         double_one(ground_truth_labels)
         double_one(pred_labels)
         ground_truth_labels=ground_truth_labels.int()
@@ -281,7 +281,7 @@ class ConfusionMatrixMetric(Metric):
             gt=ground_truth_labels[i]
             pred=pred_labels[i]
             tp=torch.min(gt,pred)
-            for j in range(length):
+            for j in range(len(gt)):
                 while tp[j]!=0:
                     self.confusion_matrix[j,j]+=1
                     tp[j]-=1
@@ -298,8 +298,7 @@ class ConfusionMatrixMetric(Metric):
                 pred_indexes=torch.nonzero(pred)
                 
     def compute(self):
-        self.confusion_matrix=self.confusion_matrix.int()
-        return self.confusion_matrix.numpy()
+        return self.confusion_matrix.int().cpu().numpy()
     
     def reset(self):
         self.confusion_matrix.zero_()

@@ -11,3 +11,4 @@ python train_baseline.py --full_model_checkpoint_dir ${CHECK_PATH}  \
     --batch_size 1 \
     --lr 1e-4 \
     --prefix firstrun \
+    --device cuda:3 \

@@ -118,27 +118,35 @@ class VideoDataset(Dataset):
         
 
 class VideoDataModule(pl.LightningDataModule):
-    def __init__(self, csv_path, batch_size=1, frame_step=2):
+    def __init__(self, csv_path='/tsukimi/datasets/Chiba/baseline/datalist_3', batch_size=1, frame_step=2):
+        super().__init__()
         self.csv_path = csv_path
         self.batch_size = batch_size
         self.frame_step = frame_step
     
+    def prepare_data(self):
+        pass
+    
+    def setup(self, stage: str):
+        if stage == 'fit':
+            self.train_dataset = VideoDataset(mode='train', frame_step=self.frame_step, csv_path=self.csv_path)
+            self.val_dataset = VideoDataset(mode='val', frame_step=self.frame_step, csv_path=self.csv_path)
+        elif stage == 'test':
+            self.test_dataset = VideoDataset(mode='test', frame_step=self.frame_step, csv_path=self.csv_path)
+    
     def train_dataloader(self):
-        dataset=VideoDataset(mode='train', frame_step=self.frame_step, csv_path=self.csv_path)
-        return DataLoader(dataset, batch_size=self.batch_size, shuffle=True, collate_fn=self.collate_fn, num_workers=4)
+        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, collate_fn=self.collate_fn, num_workers=4)
     
     def val_dataloader(self):
-        dataset=VideoDataset(mode='val', frame_step=self.frame_step, csv_path=self.csv_path)
-        return DataLoader(dataset, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=4)
+        return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=4)
     
     def test_dataloader(self):
-        dataset=VideoDataset(mode='test', frame_step=self.frame_step, csv_path=self.csv_path)
-        return DataLoader(dataset, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=4)
+        return DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=4)
     
     def collate_fn(self, batch):
         videos = [item[0] for item in batch]
         labels = [item[1] for item in batch]
         # B, C, T, H, W
-        return videos, torch.tensor(labels)
+        return torch.stack(videos), labels
         
         

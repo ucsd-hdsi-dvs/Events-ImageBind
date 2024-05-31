@@ -21,7 +21,7 @@ import lightning as L
 from lightning.pytorch import Trainer, seed_everything
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch import loggers as pl_loggers
-
+import torch.nn as nn
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -34,6 +34,7 @@ from models.imagebind_model import ModalityType, load_module, save_module
 from pytorch_loss import FocalLossV3
 from eventutils import AccMetric,ConfusionMatrixMetric, multi_label_accuracy, custom_multi_label_pred, ground_truth_decoder
 from datasets.VideoDataset import VideoDataModule
+import seaborn as sns
 
 logging.basicConfig(level=logging.INFO, force=True)
 
@@ -58,7 +59,10 @@ class VideoTrain(L.LightningModule):
         self.criterion = FocalLossV3()
         self.acc=AccMetric()
         self.confusion_matrix=ConfusionMatrixMetric()
+        
         self.confusion_path=os.path.join(confusion_path, prefix)
+        if not os.path.exists(self.confusion_path):
+            os.makedirs(self.confusion_path, exist_ok=True)
     
     def _get_feature_size(self):
         dummy_input = torch.zeros(
@@ -73,18 +77,18 @@ class VideoTrain(L.LightningModule):
 
     def forward(self, x):
         # input shape: (batch, seq_len, 3, 2, 224, 224)
-        logits = []
-        for video in x: # video shape: (seq_len, 3, 2, 224, 224)
-            with torch.no_grad():
-                video_embd = self.imagebind({"vision":video})  # (seq_len, feature_size)
-            lstm_out, _ = self.lstm(video_embd.unsqueeze(0))  # (1, seq_len, hidden_dim) 
-            logits.append(self.classifier(lstm_out[:, -1, :]).squeeze(0))  # (num_classes)
-        return torch.stack(logits)
+        # logits = []
+         # video shape: (batch,seq_len, 3, 2, 224, 224)
+        with torch.no_grad():
+            video_embd = self.imagebind({"vision":x})['vision']  # (batch,seq_len, feature_size)
+        lstm_out, _ = self.lstm(video_embd)  # (batch, seq_len, hidden_dim) 
+        # logits.append(self.classifier(lstm_out[:, -1, :]))  # (batch,num_classes)
+        return self.classifier(lstm_out[:, -1, :])
         
     def training_step(self, batch, batch_idx):
         videos, labels = batch
         logits = self(videos)
-        gt=ground_truth_decoder(labels)
+        gt=ground_truth_decoder(labels).to(logits.device)
         loss = self.criterion(logits, gt)
         self.log('train_loss_'+'Focal_Loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
         
@@ -98,7 +102,7 @@ class VideoTrain(L.LightningModule):
     def validation_step(self, batch, batch_idx):
         videos, labels = batch
         logits = self(videos)
-        gt=ground_truth_decoder(labels)
+        gt=ground_truth_decoder(labels).to(logits.device)
         loss = self.criterion(logits, gt)
         self.log('val_loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
         
@@ -113,7 +117,8 @@ class VideoTrain(L.LightningModule):
     def test_step(self, batch, batch_idx):
         videos, labels = batch
         logits = self(videos)
-        gt=ground_truth_decoder(labels)
+        gt=ground_truth_decoder(labels).to(logits.device)
+        
         loss = self.criterion(logits, gt)
         self.log('test_loss_'+'Focal_Loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
         
@@ -144,7 +149,7 @@ class VideoTrain(L.LightningModule):
         self.acc.reset()
         
         cm=self.confusion_matrix.compute()
-        self.log('val_cm', cm, on_step=False, on_epoch=True,prog_bar=True)
+        # self.log('val_cm', cm, on_step=False, on_epoch=True,prog_bar=True)
         self.confusion_matrix.reset()
         
         save_path=os.path.join(self.confusion_path, 'val_'+str(self.current_epoch)+'.png')
@@ -250,8 +255,6 @@ if __name__ == "__main__":
     device = torch.device(device_name)
     
     dataModule=VideoDataModule(csv_path='/tsukimi/datasets/Chiba/baseline/datalist_3',batch_size=args.batch_size)
-    train_loader=dataModule.train_dataloader()
-    val_loader=dataModule.val_dataloader()
     
     model=VideoTrain(num_classes=3,lstm_layers=args.lstm_layers,hidden_dim=args.hidden_dim,confusion_path=args.confusion_path,prefix=args.prefix,
                      max_epochs=args.max_epochs,lr=args.lr, weight_decay=args.weight_decay, momentum_betas=args.momentum_betas)
@@ -268,5 +271,5 @@ if __name__ == "__main__":
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
                       logger=loggers if loggers else None, **checkpointing)
     
-    trainer.fit(model, train_loader, val_loader)
+    trainer.fit(model, dataModule)
     
