@@ -43,11 +43,12 @@ LOG_ON_STEP = True
 LOG_ON_EPOCH = True
 
 class VideoTrain(L.LightningModule):
-    def __init__(self, num_classes=3,lstm_layers=1,hidden_dim=128,confusion_path='/tsukimi/datasets/Chiba/imagebind_baseline/confusion',prefix='firstrun',
+    def __init__(self, batch_size=1, num_classes=3,lstm_layers=1,hidden_dim=128,confusion_path='/tsukimi/datasets/Chiba/imagebind_baseline/confusion',prefix='firstrun',
                  lr=5e-4, weight_decay=1e-4, max_epochs=500,momentum_betas=(0.9, 0.95)):
         super(VideoTrain, self).__init__()
         self.save_hyperparameters()
         self.num_classes = num_classes
+        self.batch_size = batch_size
         
         self.imagebind=imagebind_model.imagebind_huge(pretrained=True)
         self.imagebind.eval()
@@ -90,13 +91,14 @@ class VideoTrain(L.LightningModule):
         logits = self(videos)
         gt=ground_truth_decoder(labels).to(logits.device)
         loss = self.criterion(logits, gt)
-        self.log('train_loss_'+'Focal_Loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
+        self.log('train_loss_'+'Focal_Loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size)
         
         acc=multi_label_accuracy(logits, gt)
-        self.log('train_acc', acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
+        self.log('train_acc', acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size)
         
         preds=custom_multi_label_pred(logits)
         self.acc.update(preds, gt)
+
         return loss
     
     def validation_step(self, batch, batch_idx):
@@ -104,10 +106,10 @@ class VideoTrain(L.LightningModule):
         logits = self(videos)
         gt=ground_truth_decoder(labels).to(logits.device)
         loss = self.criterion(logits, gt)
-        self.log('val_loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
+        # self.log('val_loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size)
         
         acc=multi_label_accuracy(logits, gt)
-        self.log('val_acc', acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
+        # self.log('val_acc', acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size)
         
         preds=custom_multi_label_pred(logits)
         self.acc.update(preds, gt)
@@ -120,10 +122,10 @@ class VideoTrain(L.LightningModule):
         gt=ground_truth_decoder(labels).to(logits.device)
         
         loss = self.criterion(logits, gt)
-        self.log('test_loss_'+'Focal_Loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
+        # self.log('test_loss_'+'Focal_Loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size)
         
         acc=multi_label_accuracy(logits, gt)
-        self.log('test_acc', acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
+        # self.log('test_acc', acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size)
         
         preds=custom_multi_label_pred(logits)
         self.acc.update(preds, gt)
@@ -140,12 +142,13 @@ class VideoTrain(L.LightningModule):
     
     def on_train_epoch_end(self):
         acc=self.acc.compute()
-        self.log('train_acc', acc, on_step=False, on_epoch=True,prog_bar=True)
+        self.log('train_acc', acc,batch_size=self.batch_size)
         self.acc.reset()
     
     def on_validation_epoch_end(self):
+        print('Validation Epoch End')
         acc=self.acc.compute()
-        self.log('val_acc', acc, on_step=False, on_epoch=True,prog_bar=True)
+        self.log('val_acc', acc,batch_size=self.batch_size)
         self.acc.reset()
         
         cm=self.confusion_matrix.compute()
@@ -164,11 +167,11 @@ class VideoTrain(L.LightningModule):
     
     def on_test_epoch_end(self):
         acc=self.acc.compute()
-        self.log('test_acc', acc, on_step=False, on_epoch=True,prog_bar=True)
+        self.log('test_acc', acc, batch_size=self.batch_size)
         self.acc.reset()
         
         cm=self.confusion_matrix.compute()
-        self.log('test_cm', cm, on_step=False, on_epoch=True,prog_bar=True)
+        # self.log('test_cm', cm, batch_size=self.batch_size)
         self.confusion_matrix.reset()
         
         save_path=os.path.join(self.confusion_path, 'test.png')
@@ -257,7 +260,7 @@ if __name__ == "__main__":
     dataModule=VideoDataModule(csv_path='/tsukimi/datasets/Chiba/baseline/datalist_3',batch_size=args.batch_size)
     
     model=VideoTrain(num_classes=3,lstm_layers=args.lstm_layers,hidden_dim=args.hidden_dim,confusion_path=args.confusion_path,prefix=args.prefix,
-                     max_epochs=args.max_epochs,lr=args.lr, weight_decay=args.weight_decay, momentum_betas=args.momentum_betas)
+                     max_epochs=args.max_epochs,lr=args.lr, weight_decay=args.weight_decay, momentum_betas=args.momentum_betas,batch_size=args.batch_size)
     if args.full_model_checkpointing:
         checkpointing = {"enable_checkpointing": args.full_model_checkpointing,
                          "callbacks": [ModelCheckpoint(monitor="val_acc", dirpath=args.full_model_checkpoint_dir,
@@ -267,9 +270,10 @@ if __name__ == "__main__":
         checkpointing = {"enable_checkpointing": args.full_model_checkpointing,}
     
     trainer=Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
-                    devices=1 if ":" not in device_name else [int(device_name.split(":")[1])], deterministic=True,
+                    devices=1 if ":" not in device_name else int(device_name.split(":")[1]), deterministic=True,
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
-                      logger=loggers if loggers else None, **checkpointing)
+                      logger=loggers if loggers else None,
+                       **checkpointing)
     
     trainer.fit(model, dataModule)
     

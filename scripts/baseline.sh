@@ -5,10 +5,10 @@ LOG_DIR='/tsukimi/datasets/Chiba/imagebind_baseline/logs'
 
 python train_baseline.py --full_model_checkpoint_dir ${CHECK_PATH}  \
     --full_model_checkpointing \
-    --loggers wandb tensorboard \
+    --loggers tensorboard \
     --loggers_dir ${CHECK_PATH} \
     --max_epochs 100 \
     --batch_size 1 \
     --lr 1e-4 \
     --prefix firstrun \
-    --device cuda:3 \
+    --device cuda:4 \
