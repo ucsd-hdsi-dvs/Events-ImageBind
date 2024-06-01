@@ -7,8 +7,9 @@ import cv2
 import torch
 from torchvision import transforms
 import lightning as pl
-from torch.utils.data import DataLoader
-
+from torch.utils.data import DataLoader,DistributedSampler,Sampler
+from catalyst.data.sampler import DistributedSamplerWrapper
+import pickle
 
 def resize_pad(frame, size=224):
     """
@@ -123,6 +124,7 @@ class VideoDataModule(pl.LightningDataModule):
         self.csv_path = csv_path
         self.batch_size = batch_size
         self.frame_step = frame_step
+        self.data_distribution={'others': 10392,'restrainer_interaction': 6248,'interaction_with_partner': 3072}
     
     def prepare_data(self):
         pass
@@ -131,22 +133,65 @@ class VideoDataModule(pl.LightningDataModule):
         if stage == 'fit':
             self.train_dataset = VideoDataset(mode='train', frame_step=self.frame_step, csv_path=self.csv_path)
             self.val_dataset = VideoDataset(mode='val', frame_step=self.frame_step, csv_path=self.csv_path)
+            self.weights=self.load_weights()
         elif stage == 'test':
             self.test_dataset = VideoDataset(mode='test', frame_step=self.frame_step, csv_path=self.csv_path)
     
     def train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, collate_fn=self.collate_fn, num_workers=4)
+        num_tasks=self.trainer.world_size
+        global_rank = self.trainer.global_rank
+        weighted_sampler=torch.utils.data.WeightedRandomSampler(self.weights,len(self.weights))
+        self.sampler_train=DistributedSamplerWrapper(sampler=weighted_sampler,num_replicas=num_tasks,rank=global_rank)
+        
+        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, collate_fn=self.collate_fn, num_workers=4,sampler=self.sampler_train)
     
     def val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=4)
+        num_tasks=self.trainer.world_size
+        global_rank = self.trainer.global_rank
+        distributed_sampler = DistributedSampler(self.val_dataset, num_replicas=num_tasks, rank=global_rank)
+        return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=4,sampler=distributed_sampler)
     
     def test_dataloader(self):
-        return DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=4)
+        num_tasks=self.trainer.world_size
+        global_rank = self.trainer.global_rank
+        distributed_sampler = DistributedSampler(self.val_dataset, num_replicas=num_tasks, rank=global_rank)
+        return DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=4,sampler=distributed_sampler)
     
     def collate_fn(self, batch):
         videos = [item[0] for item in batch]
         labels = [item[1] for item in batch]
         # B, C, T, H, W
-        return torch.stack(videos), labels
-        
+        return videos, labels
+    
+    def cal_weight(self,labels):
+        label=labels.split('&')
+        label1=label[0]
+        label2=label[1]
+        num_label1=self.data_distribution[label1]
+        num_label2=self.data_distribution[label2]
+        num_harmonic_mean=2/(1/num_label1+1/num_label2)
+        # return weights
+        return 1.0/num_harmonic_mean
+    
+    def apply_weight(self,dataset):
+        weights=[]
+        for idx,label in enumerate(dataset.labels):
+            # print the complete percentage of the dataset
+            print(f'Percentage of the dataset processed: {idx/len(dataset)*100}%')
+            weighti=self.cal_weight(label)
+            weights.append(weighti)
+        return torch.tensor(weights)
+    
+    def load_weights(self):
+        weight_path='/tsukimi/datasets/Chiba/baseline/weights.pkl'
+        # if file exists, load the weights
+        if os.path.exists(weight_path):
+            with open(weight_path, 'rb') as f:
+                weights=pickle.load(f)
+        else:
+            weights=self.apply_weight(self.train_dataset)
+            # save the weights
+            with open(weight_path, 'wb') as f:
+                pickle.dump(weights,f)
+        return weights
         
