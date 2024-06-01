@@ -91,10 +91,11 @@ class VideoTrain(L.LightningModule):
         logits = self(videos)
         gt=ground_truth_decoder(labels).to(logits.device)
         loss = self.criterion(logits, gt)
-        self.log('train_loss_'+'Focal_Loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size)
+        print(loss)
+        # self.log('train_loss_'+'Focal_Loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size)
         
         acc=multi_label_accuracy(logits, gt)
-        self.log('train_acc', acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size)
+        # self.log('train_acc', acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size)
         
         preds=custom_multi_label_pred(logits)
         self.acc.update(preds, gt)
@@ -141,14 +142,17 @@ class VideoTrain(L.LightningModule):
         return [optimizer], [lr_scheduler]
     
     def on_train_epoch_end(self):
+        print('Train Epoch End')
+        
         acc=self.acc.compute()
-        self.log('train_acc', acc,batch_size=self.batch_size)
+        self.log('train_acc', acc,batch_size=self.batch_size, on_epoch=True,on_step=False,prog_bar=True,sync_dist=True)
         self.acc.reset()
     
     def on_validation_epoch_end(self):
         print('Validation Epoch End')
+        
         acc=self.acc.compute()
-        self.log('val_acc', acc,batch_size=self.batch_size)
+        self.log('val_acc', acc,batch_size=self.batch_size, on_epoch=True,on_step=False,prog_bar=True,sync_dist=True)
         self.acc.reset()
         
         cm=self.confusion_matrix.compute()
@@ -166,8 +170,10 @@ class VideoTrain(L.LightningModule):
         
     
     def on_test_epoch_end(self):
+        print('Test Epoch End')
+        
         acc=self.acc.compute()
-        self.log('test_acc', acc, batch_size=self.batch_size)
+        self.log('test_acc', acc, batch_size=self.batch_size, on_epoch=True,on_step=False,prog_bar=True,sync_dist=True)
         self.acc.reset()
         
         cm=self.confusion_matrix.compute()
