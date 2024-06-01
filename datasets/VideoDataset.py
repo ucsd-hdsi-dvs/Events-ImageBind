@@ -143,19 +143,19 @@ class VideoDataModule(pl.LightningDataModule):
         weighted_sampler=torch.utils.data.WeightedRandomSampler(self.weights,len(self.weights))
         self.sampler_train=DistributedSamplerWrapper(sampler=weighted_sampler,num_replicas=num_tasks,rank=global_rank)
         
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, collate_fn=self.collate_fn, num_workers=4,sampler=self.sampler_train)
+        return DataLoader(self.train_dataset, batch_size=self.batch_size,collate_fn=self.collate_fn, num_workers=4,sampler=self.sampler_train)
     
     def val_dataloader(self):
         num_tasks=self.trainer.world_size
         global_rank = self.trainer.global_rank
         distributed_sampler = DistributedSampler(self.val_dataset, num_replicas=num_tasks, rank=global_rank)
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=4,sampler=distributed_sampler)
+        return DataLoader(self.val_dataset, batch_size=self.batch_size, collate_fn=self.collate_fn, num_workers=4,sampler=distributed_sampler)
     
     def test_dataloader(self):
         num_tasks=self.trainer.world_size
         global_rank = self.trainer.global_rank
         distributed_sampler = DistributedSampler(self.val_dataset, num_replicas=num_tasks, rank=global_rank)
-        return DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, collate_fn=self.collate_fn, num_workers=4,sampler=distributed_sampler)
+        return DataLoader(self.test_dataset, batch_size=self.batch_size,collate_fn=self.collate_fn, num_workers=4,sampler=distributed_sampler)
     
     def collate_fn(self, batch):
         videos = [item[0] for item in batch]

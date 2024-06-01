@@ -85,19 +85,19 @@ class VideoTrain(L.LightningModule):
          # video shape: (batch,seq_len, 3, 2, 224, 224)
         logits=[]
         batch_size = 32
-        num_batches = (x.size(1) + batch_size - 1) // batch_size
+        num_batches = (x.size(0) + batch_size - 1) // batch_size
         
         for i in range(num_batches):
             start_idx = i * batch_size
-            end_idx = min((i + 1) * batch_size, x.size(1))
-            batch = x[:, start_idx:end_idx, :, :, :, :]
+            end_idx = min((i + 1) * batch_size, x.size(0))
+            batch = x[start_idx:end_idx, :, :, :, :] # batch shape: (batch, 3, 2, 224, 224)
             with torch.no_grad():
-                video_embd = self.imagebind({"vision":batch})['vision']
-            lstm_out, _ = self.lstm(video_embd)
-            batch=self.classifier(lstm_out[:, -1, :])
-            logits.append(batch)
-        
-        return torch.cat(logits, dim=0)
+                video_embd = self.imagebind({"vision":batch.unsqueeze(0)})['vision'] # 1, batch, 1024
+            lstm_out, _ = self.lstm(video_embd) # lstm_out: 1, batch, hidden_dim
+            logit = self.classifier(lstm_out.squeeze(0)) # logit: batch, num_classes
+            logits.append(logit)
+        logits=torch.cat(logits, dim=0) # logits: seq_len, num_classes
+        return logits[-1, :]
         
     def training_step(self, batch, batch_idx):
         videos, labels = batch
