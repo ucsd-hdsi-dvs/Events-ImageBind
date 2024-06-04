@@ -82,53 +82,45 @@ class VideoTrain(L.LightningModule):
     def forward(self, x):
         # input shape: (batch, seq_len, 3, 2, 224, 224)
         # logits = []
-         # video shape: (batch,seq_len, 3, 2, 224, 224)
+         # video shape: (batch=1,seq_len, 3, 2, 224, 224)
         logits=[]
         batch_size = 32
-        num_batches = (x.size(0) + batch_size - 1) // batch_size
+        num_batches = (x.size(1) + batch_size - 1) // batch_size
         
         for i in range(num_batches):
             start_idx = i * batch_size
-            end_idx = min((i + 1) * batch_size, x.size(0))
-            batch = x[start_idx:end_idx, :, :, :, :] # batch shape: (batch, 3, 2, 224, 224)
+            end_idx = min((i + 1) * batch_size, x.size(1))
+            batch = x[:,start_idx:end_idx, :, :, :, :] # batch shape: (1,batch, 3, 2, 224, 224)
             with torch.no_grad():
-                video_embd = self.imagebind({"vision":batch.unsqueeze(0)})['vision'] # 1, batch, 1024
+                video_embd = self.imagebind({"vision":batch})['vision'] # 1, batch, 1024
             lstm_out, _ = self.lstm(video_embd) # lstm_out: 1, batch, hidden_dim
-            logit = self.classifier(lstm_out.squeeze(0)) # logit: batch, num_classes
+            logit = self.classifier(lstm_out) # logit: batch, num_classes
             logits.append(logit)
-        logits=torch.cat(logits, dim=0) # logits: seq_len, num_classes
-        return logits[-1, :]
+        logits=torch.cat(logits, dim=1) # logits: seq_len, num_classes
+        return logits[:,-1, :]
         
     def training_step(self, batch, batch_idx):
         videos, labels = batch
-        logits=[]
-        for video in videos:
-            logit=self(video)
-            logits.append(logit)
-        logits=torch.stack(logits)
+        logits=self(videos)
         gt=ground_truth_decoder(labels).to(logits.device)
         loss = self.criterion(logits, gt)
         # print(loss)
         self.log('train_loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size)
         
-        acc=multi_label_accuracy(logits, gt)
-        self.log('train_acc', acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size)
+        # acc=multi_label_accuracy(logits, gt)
+        # self.log('train_acc', acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size)
         
         return loss
     
     def validation_step(self, batch, batch_idx):
         videos, labels = batch
-        logits=[]
-        for video in videos:
-            logit=self(video)
-            logits.append(logit)
-        logits=torch.stack(logits)
+        logits=self(videos)
         gt=ground_truth_decoder(labels).to(logits.device)
         loss = self.criterion(logits, gt)
-        self.log('val_loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size, sync_dist=True)
+        self.log('val_loss', loss, on_step=False, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size, sync_dist=True)
         
         acc=multi_label_accuracy(logits, gt)
-        self.log('val_acc', acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size, sync_dist=True)
+        self.log('val_acc', acc, on_step=False, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size, sync_dist=True)
         
         preds=custom_multi_label_pred(logits)
         self.acc.update(preds, gt)
@@ -137,18 +129,14 @@ class VideoTrain(L.LightningModule):
     
     def test_step(self, batch, batch_idx):
         videos, labels = batch
-        logits=[]
-        for video in videos:
-            logit=self(video)
-            logits.append(logit)
-        logits=torch.stack(logits)
+        logits=self(videos)
         gt=ground_truth_decoder(labels).to(logits.device)
         
         loss = self.criterion(logits, gt)
-        self.log('test_loss_'+'Focal_Loss', loss, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size, sync_dist=True)
+        self.log('test_loss', loss, on_step=False, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size, sync_dist=True)
         
         acc=multi_label_accuracy(logits, gt)
-        self.log('test_acc', acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size, sync_dist=True)
+        self.log('test_acc', acc, on_step=False, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size, sync_dist=True)
         
         preds=custom_multi_label_pred(logits)
         self.acc.update(preds, gt)
@@ -204,6 +192,16 @@ class VideoTrain(L.LightningModule):
         plt.savefig(save_path)
         plt.close()
 
+    def _load_checkpoint(self, checkpoint_path):
+        checkpoint=torch.load(checkpoint_path)
+        state_dict = checkpoint['state_dict']
+        
+        lstm_state_dict = {k[len('lstm.'):]: v for k, v in state_dict.items() if k.startswith('lstm.')}
+        classifier_state_dict = {k[len('classifier.'):]: v for k, v in state_dict.items() if k.startswith('classifier.')}
+        self.lstm.load_state_dict(lstm_state_dict)
+        self.classifier.load_state_dict(classifier_state_dict)
+        print("Checkpoint loaded successfully")
+    
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train the ImageBind model with PyTorch Lightning and LoRA.")
@@ -231,7 +229,8 @@ def parse_args():
     parser.add_argument("--hidden_dim", type=int, default=128, help="Hidden dimension of the LSTM")
     parser.add_argument("--confusion_path", type=str, default='/tsukimi/datasets/Chiba/imagebind_baseline/confusion', help="Path to save confusion matrix")
     parser.add_argument("--prefix", type=str, default='firstrun', help="Prefix for confusion matrix")
-
+    parser.add_argument('--load_checkpoint', type=str, default=None, help='Path to load checkpoint')
+    
     return parser.parse_args()
 
 
@@ -282,6 +281,10 @@ if __name__ == "__main__":
     
     model=VideoTrain(num_classes=3,lstm_layers=args.lstm_layers,hidden_dim=args.hidden_dim,confusion_path=args.confusion_path,prefix=args.prefix,
                      max_epochs=args.max_epochs,lr=args.lr, weight_decay=args.weight_decay, momentum_betas=args.momentum_betas,batch_size=args.batch_size)
+    
+    if args.load_checkpoint:
+        model._load_checkpoint(args.load_checkpoint)
+    
     if args.full_model_checkpointing:
         checkpointing = {"enable_checkpointing": args.full_model_checkpointing,
                          "callbacks": [ModelCheckpoint(monitor="val_acc", dirpath=args.full_model_checkpoint_dir,
