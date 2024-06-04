@@ -85,7 +85,12 @@ class VideoDataset(Dataset):
     def _read_video_frames(self, video_path):
         cap = cv2.VideoCapture(video_path)
         frames = []
+        
         success, frame1 = cap.read()
+        frame1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2RGB)
+        frame1 = torch.tensor(frame1).permute(2, 0, 1).float()/255.0
+        frame1 = self.frame_normalize(frame1)
+        
         count = 0
         try:
             while success:
@@ -93,24 +98,19 @@ class VideoDataset(Dataset):
                 if not success:
                     break
 
-                if count % self.frame_step == 0:
-                    # Convert both frames to RGB and tensors, then permute
-                    frame1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2RGB)
-                    frame2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2RGB)
-                    frame1 = torch.tensor(frame1).permute(2, 0, 1).float()/255.0
-                    frame2 = torch.tensor(frame2).permute(2, 0, 1).float()/255.0
-                    
-                    # Normalize the frames
-                    frame1 = self.frame_normalize(frame1)
-                    frame2 = self.frame_normalize(frame2)
-                    
-                    # Combine frames (e.g., concatenate along the channel dimension)
-                    combined_frame = torch.stack([frame1, frame2], dim=0) # Shape: (2, 3, H, W)
-                    
-                    # transpose to (3,2,H,W)
-                    combined_frame = combined_frame.permute(1,0,2,3)
-                    
-                    frames.append(combined_frame)
+                # Convert both frames to RGB and tensors, then permute
+                frame2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2RGB)
+                frame2 = torch.tensor(frame2).permute(2, 0, 1).float()/255.0
+                # Normalize the frames
+                frame2 = self.frame_normalize(frame2)
+                
+                # Combine frames (e.g., concatenate along the channel dimension)
+                combined_frame = torch.stack([frame1, frame2], dim=0) # Shape: (2, 3, H, W)
+                
+                # transpose to (3,2,H,W)
+                combined_frame = combined_frame.permute(1,0,2,3)
+                
+                frames.append(combined_frame)
                 
                 frame1 = frame2  # Set the second frame as the first for the next iteration
                 count += 1
@@ -124,20 +124,100 @@ class VideoDataset(Dataset):
             
         return torch.stack(frames) # L,C,T,H,W
 
+class TrainVideoDataset(VideoDataset):
+    def __init__(self,
+                 mode='train',
+                 frame_step=2,
+                 csv_path='/tsukimi/datasets/Chiba/baseline/datalist_3',
+                 ):
+        self.mode=mode
+        self.frame_step=frame_step
+        self.csv_path=csv_path
+        
+        self.data_list = pd.read_csv(os.path.join(csv_path, 'train_16.csv'),header=None, delimiter=',')
+        self.labels=list(self.data_list.values[:,1])
+        self.videos=list(self.data_list.values[:,0])
+        self.start_frame=list(self.data_list.values[:,2])
+        self.end_frame=list(self.data_list.values[:,3])
+        self.frame_normalize = transforms.Compose([
+                resize_pad,
+                transforms.Normalize([0.153, 0.153, 0.153], [0.165, 0.165, 0.165])])
+    
+    def __getitem__(self, idx):
+        video_path=self.videos[idx]
+        label=self.labels[idx]
+        start_frame=self.start_frame[idx]
+        end_frame=self.end_frame[idx]
+        
+        frames=self._read_video_frames(video_path, start_frame, end_frame)
+        return frames, label
+    
+    def _read_video_frames(self, video_path, start_frame, end_frame):
+        cap = cv2.VideoCapture(video_path)
+        # read from start_frame to end_frame
+        start_frame=float(start_frame)
+        end_frame=float(end_frame)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        frames = []
+        
+        success, frame1 = cap.read()
+        frame1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2RGB)
+        frame1 = torch.tensor(frame1).permute(2, 0, 1).float()/255.0
+        frame1 = self.frame_normalize(frame1)
+        
+        count = 0
+        try:
+            while success:
+                success, frame2 = cap.read()
+                if not success:
+                    break
+
+                # Convert both frames to RGB and tensors, then permute
+                frame2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2RGB)
+                frame2 = torch.tensor(frame2).permute(2, 0, 1).float()/255.0
+                # Normalize the frames
+                frame2 = self.frame_normalize(frame2)
+                
+                # Combine frames (e.g., concatenate along the channel dimension)
+                combined_frame = torch.stack([frame1, frame2], dim=0) # Shape: (2, 3, H, W)
+                
+                # transpose to (3,2,H,W)
+                combined_frame = combined_frame.permute(1,0,2,3)
+                
+                frames.append(combined_frame)
+                
+                frame1 = frame2  # Set the second frame as the first for the next iteration
+                count += 1
+                if count == (end_frame-start_frame):
+                    break
+        except Exception as e:
+                print(f"Error processing video frames: {e}")
+        finally:
+                cap.release()
+        
+        if not frames:
+            print(f"No frames found for video at path: {video_path}")
+        
+        assert len(frames)==(end_frame-start_frame)
+        
+        return torch.stack(frames) # L,C,T,H,W
+
+
 class VideoDataModule(pl.LightningDataModule):
-    def __init__(self, csv_path='/tsukimi/datasets/Chiba/baseline/datalist_3', batch_size=1, frame_step=2):
+    def __init__(self, csv_path='/tsukimi/datasets/Chiba/baseline/datalist_3', batch_size=1, frame_step=2,val_batch_size=1):
         super().__init__()
         self.csv_path = csv_path
         self.batch_size = batch_size
+        self.val_batch_size = val_batch_size
         self.frame_step = frame_step
-        self.data_distribution={'others': 10392,'restrainer_interaction': 6248,'interaction_with_partner': 3072}
+        self.data_distribution={'others': 117037, 'restrainer_interaction': 82163, 'interaction_with_partner': 34916}
     
     def prepare_data(self):
         pass
     
     def setup(self, stage: str):
         if stage == 'fit':
-            self.train_dataset = VideoDataset(mode='train', frame_step=self.frame_step, csv_path=self.csv_path)
+            self.train_dataset = TrainVideoDataset(mode='train', frame_step=self.frame_step, csv_path=self.csv_path)
             self.val_dataset = VideoDataset(mode='val', frame_step=self.frame_step, csv_path=self.csv_path)
             self.weights=self.load_weights()
         elif stage == 'test':
@@ -149,24 +229,24 @@ class VideoDataModule(pl.LightningDataModule):
         weighted_sampler=torch.utils.data.WeightedRandomSampler(self.weights,len(self.weights))
         self.sampler_train=DistributedSamplerWrapper(sampler=weighted_sampler,num_replicas=num_tasks,rank=global_rank)
         
-        return DataLoader(self.train_dataset, batch_size=self.batch_size,collate_fn=self.collate_fn, num_workers=1,sampler=self.sampler_train)
+        return DataLoader(self.train_dataset, batch_size=self.batch_size,collate_fn=self.collate_fn, num_workers=4,sampler=self.sampler_train)
     
     def val_dataloader(self):
         num_tasks=self.trainer.world_size
         global_rank = self.trainer.global_rank
         distributed_sampler = DistributedSampler(self.val_dataset, num_replicas=num_tasks, rank=global_rank)
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, collate_fn=self.collate_fn, num_workers=1,sampler=distributed_sampler)
+        return DataLoader(self.val_dataset, batch_size=self.val_batch_size, collate_fn=self.collate_fn, num_workers=4,sampler=distributed_sampler)
     
     def test_dataloader(self):
         num_tasks=self.trainer.world_size
         global_rank = self.trainer.global_rank
         distributed_sampler = DistributedSampler(self.val_dataset, num_replicas=num_tasks, rank=global_rank)
-        return DataLoader(self.test_dataset, batch_size=self.batch_size,collate_fn=self.collate_fn, num_workers=1,sampler=distributed_sampler)
+        return DataLoader(self.test_dataset, batch_size=self.val_batch_size,collate_fn=self.collate_fn, num_workers=4,sampler=distributed_sampler)
     
     def collate_fn(self, batch):
         videos = [item[0] for item in batch]
         labels = [item[1] for item in batch]
-        # B, C, T, H, W
+        # B, L, C, T, H, W
         return torch.stack(videos), labels
     
     def cal_weight(self,labels):

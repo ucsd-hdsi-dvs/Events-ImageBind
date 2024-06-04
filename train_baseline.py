@@ -49,16 +49,15 @@ class VideoTrain(L.LightningModule):
         self.save_hyperparameters()
         self.num_classes = num_classes
         self.batch_size = batch_size
-        
+
         self.imagebind=imagebind_model.imagebind_huge(pretrained=True)
         self.imagebind.eval()
         for param in self.imagebind.parameters():
             param.requires_grad = False
         
         feature_size = self._get_feature_size()
-        
-        self.lstm = nn.LSTM(feature_size, hidden_dim, lstm_layers, batch_first=True)
-        self.classifier = nn.Linear(hidden_dim, num_classes)
+    
+        self.classifier = nn.Linear(feature_size, num_classes)
         
         self.criterion = FocalLossV3()
         self.acc=AccMetric()
@@ -83,8 +82,17 @@ class VideoTrain(L.LightningModule):
         # input shape: (batch, seq_len, 3, 2, 224, 224)
         # logits = []
          # video shape: (batch=1,seq_len, 3, 2, 224, 224)
+        with torch.no_grad():
+            video_embd = self.imagebind({"vision":x})['vision'] # batch, 1024
+        logits = self.classifier(video_embd) # logit: batch, num_classes
+        return logits
+    
+    def forward_val(self,x):
+        # input shape: (batch, seq_len, 3, 2, 224, 224)
+        # logits = []
+         # video shape: (batch=1,seq_len, 3, 2, 224, 224)
         logits=[]
-        batch_size = 32
+        batch_size = 1
         num_batches = (x.size(1) + batch_size - 1) // batch_size
         
         for i in range(num_batches):
@@ -92,12 +100,13 @@ class VideoTrain(L.LightningModule):
             end_idx = min((i + 1) * batch_size, x.size(1))
             batch = x[:,start_idx:end_idx, :, :, :, :] # batch shape: (1,batch, 3, 2, 224, 224)
             with torch.no_grad():
-                video_embd = self.imagebind({"vision":batch})['vision'] # 1, batch, 1024
-            lstm_out, _ = self.lstm(video_embd) # lstm_out: 1, batch, hidden_dim
-            logit = self.classifier(lstm_out) # logit: batch, num_classes
-            logits.append(logit)
-        logits=torch.cat(logits, dim=1) # logits: seq_len, num_classes
-        return logits[:,-1, :]
+                video_embd = self.imagebind({"vision":batch})['vision'] # 1, 1024
+            logits.append(video_embd) # logits: seq_len, 1024
+        # mean logits
+        logits=torch.cat(logits, dim=0)
+        logits = logits.mean(dim=0, keepdim=True) # logits: 1, 1024 
+        logits = self.classifier(logits) # logits: 1, num_classes
+        return logits
         
     def training_step(self, batch, batch_idx):
         videos, labels = batch
@@ -114,7 +123,7 @@ class VideoTrain(L.LightningModule):
     
     def validation_step(self, batch, batch_idx):
         videos, labels = batch
-        logits=self(videos)
+        logits=self.forward_val(videos)
         gt=ground_truth_decoder(labels).to(logits.device)
         loss = self.criterion(logits, gt)
         self.log('val_loss', loss, on_step=False, on_epoch=LOG_ON_EPOCH,prog_bar=True,batch_size=self.batch_size, sync_dist=True)
@@ -129,7 +138,7 @@ class VideoTrain(L.LightningModule):
     
     def test_step(self, batch, batch_idx):
         videos, labels = batch
-        logits=self(videos)
+        logits=self.forward_val(videos)
         gt=ground_truth_decoder(labels).to(logits.device)
         
         loss = self.criterion(logits, gt)
@@ -170,7 +179,6 @@ class VideoTrain(L.LightningModule):
         plt.xlabel('Predicted Label')
         plt.savefig(save_path)
         plt.close()
-        
     
     def on_test_epoch_end(self):
         print('Test Epoch End')

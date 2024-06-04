@@ -502,7 +502,7 @@ class ImageBindModel(nn.Module):
                     
                     # Average over clips
                     # annotate by FCZ
-                    # modality_value = modality_value.mean(dim=1)
+                    modality_value = modality_value.mean(dim=1)
 
                 outputs[modality_key] = modality_value
 
