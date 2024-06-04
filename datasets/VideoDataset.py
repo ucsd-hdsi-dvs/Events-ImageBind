@@ -134,11 +134,11 @@ class TrainVideoDataset(VideoDataset):
         self.frame_step=frame_step
         self.csv_path=csv_path
         
-        self.data_list = pd.read_csv(os.path.join(csv_path, 'train_16.csv'),header=None, delimiter=',')
+        self.data_list = pd.read_csv(os.path.join(csv_path, 'train_16.csv'))
         self.labels=list(self.data_list.values[:,1])
         self.videos=list(self.data_list.values[:,0])
-        self.start_frame=list(self.data_list.values[:,2])
-        self.end_frame=list(self.data_list.values[:,3])
+        self.start_frame=list(map(float, self.data_list.values[:, 2]))
+        self.end_frame=list(map(float, self.data_list.values[:, 3])) 
         self.frame_normalize = transforms.Compose([
                 resize_pad,
                 transforms.Normalize([0.153, 0.153, 0.153], [0.165, 0.165, 0.165])])
@@ -155,8 +155,6 @@ class TrainVideoDataset(VideoDataset):
     def _read_video_frames(self, video_path, start_frame, end_frame):
         cap = cv2.VideoCapture(video_path)
         # read from start_frame to end_frame
-        start_frame=float(start_frame)
-        end_frame=float(end_frame)
         cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
         frames = []
         
@@ -229,19 +227,19 @@ class VideoDataModule(pl.LightningDataModule):
         weighted_sampler=torch.utils.data.WeightedRandomSampler(self.weights,len(self.weights))
         self.sampler_train=DistributedSamplerWrapper(sampler=weighted_sampler,num_replicas=num_tasks,rank=global_rank)
         
-        return DataLoader(self.train_dataset, batch_size=self.batch_size,collate_fn=self.collate_fn, num_workers=4,sampler=self.sampler_train)
+        return DataLoader(self.train_dataset, batch_size=self.batch_size,collate_fn=self.collate_fn, num_workers=1,sampler=self.sampler_train)
     
     def val_dataloader(self):
         num_tasks=self.trainer.world_size
         global_rank = self.trainer.global_rank
         distributed_sampler = DistributedSampler(self.val_dataset, num_replicas=num_tasks, rank=global_rank)
-        return DataLoader(self.val_dataset, batch_size=self.val_batch_size, collate_fn=self.collate_fn, num_workers=4,sampler=distributed_sampler)
+        return DataLoader(self.val_dataset, batch_size=self.val_batch_size, collate_fn=self.collate_fn, num_workers=1,sampler=distributed_sampler)
     
     def test_dataloader(self):
         num_tasks=self.trainer.world_size
         global_rank = self.trainer.global_rank
         distributed_sampler = DistributedSampler(self.val_dataset, num_replicas=num_tasks, rank=global_rank)
-        return DataLoader(self.test_dataset, batch_size=self.val_batch_size,collate_fn=self.collate_fn, num_workers=4,sampler=distributed_sampler)
+        return DataLoader(self.test_dataset, batch_size=self.val_batch_size,collate_fn=self.collate_fn, num_workers=1,sampler=distributed_sampler)
     
     def collate_fn(self, batch):
         videos = [item[0] for item in batch]
