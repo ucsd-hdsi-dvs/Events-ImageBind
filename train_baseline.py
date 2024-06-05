@@ -57,7 +57,16 @@ class VideoTrain(L.LightningModule):
         
         feature_size = self._get_feature_size()
     
-        self.classifier = nn.Linear(feature_size, num_classes)
+        # self.classifier = nn.Linear(feature_size, num_classes)
+        self.classifier = nn.Sequential(
+            nn.Linear(feature_size, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Linear(256, num_classes)
+        )
         
         self.criterion = FocalLossV3()
         self.acc=AccMetric()
