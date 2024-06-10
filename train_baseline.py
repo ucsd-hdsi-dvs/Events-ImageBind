@@ -213,10 +213,11 @@ class VideoTrain(L.LightningModule):
         checkpoint=torch.load(checkpoint_path)
         state_dict = checkpoint['state_dict']
         
-        lstm_state_dict = {k[len('lstm.'):]: v for k, v in state_dict.items() if k.startswith('lstm.')}
         classifier_state_dict = {k[len('classifier.'):]: v for k, v in state_dict.items() if k.startswith('classifier.')}
-        self.lstm.load_state_dict(lstm_state_dict)
         self.classifier.load_state_dict(classifier_state_dict)
+        
+        # lstm_state_dict = {k[len('lstm.'):]: v for k, v in state_dict.items() if k.startswith('lstm.')}
+        # self.lstm.load_state_dict(lstm_state_dict)
         print("Checkpoint loaded successfully")
     
 

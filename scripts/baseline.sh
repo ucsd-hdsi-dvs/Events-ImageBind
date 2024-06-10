@@ -12,4 +12,4 @@ python train_baseline.py --full_model_checkpoint_dir ${CHECK_PATH}  \
     --lr 1e-3 \
     --prefix cut17_lr1e3_nolstm \
     --device cuda:4 \
-    # --load_checkpoint '/tsukimi/datasets/Chiba/imagebind_baseline/checkpoint/imagebind-epoch=07-val_acc=0.62.ckpt' \
+    # --load_checkpoint '/tsukimi/datasets/Chiba/imagebind_baseline/checkpoint/last-v4.ckpt' \

@@ -227,7 +227,7 @@ class VideoDataModule(pl.LightningDataModule):
         weighted_sampler=torch.utils.data.WeightedRandomSampler(self.weights,len(self.weights))
         self.sampler_train=DistributedSamplerWrapper(sampler=weighted_sampler,num_replicas=num_tasks,rank=global_rank)
         
-        return DataLoader(self.train_dataset, batch_size=self.batch_size,collate_fn=self.collate_fn, num_workers=1,sampler=self.sampler_train)
+        return DataLoader(self.train_dataset, batch_size=self.batch_size,collate_fn=self.collate_fn, num_workers=1,sampler=self.sampler_train,drop_last=True)
     
     def val_dataloader(self):
         num_tasks=self.trainer.world_size
@@ -239,7 +239,7 @@ class VideoDataModule(pl.LightningDataModule):
         num_tasks=self.trainer.world_size
         global_rank = self.trainer.global_rank
         distributed_sampler = DistributedSampler(self.val_dataset, num_replicas=num_tasks, rank=global_rank)
-        return DataLoader(self.test_dataset, batch_size=self.val_batch_size,collate_fn=self.collate_fn, num_workers=1,sampler=distributed_sampler)
+        return DataLoader(self.test_dataset, batch_size=self.val_batch_size,collate_fn=self.collate_fn, num_workers=1,sampler=distributed_sampler,drop_last=True)
     
     def collate_fn(self, batch):
         videos = [item[0] for item in batch]

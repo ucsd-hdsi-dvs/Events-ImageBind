@@ -150,7 +150,6 @@ dependencies:
       - pyshp==2.3.1
       - python-multipart==0.0.9
       - pytorch-lightning==2.2.1
-      - pytorch-loss==0.0.0
       - pytorchvideo==0.1.5
       - pytz==2024.1
       - pyyaml==6.0.1
