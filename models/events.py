@@ -34,21 +34,21 @@ def save_events_modality_trunks():
 def load_events_modality_trunks():
     raise NotImplementedError
 
-# preprocessor for event stream
-class EventPreprocessor(RGBDTPreprocessor):
-    def __init__(self,event_stem,**kwargs):
-        super().__init__(rgbt_stem=event_stem,depth_stem=None,**kwargs)
+# # preprocessor for event stream
+# class EventPreprocessor(RGBDTPreprocessor):
+#     def __init__(self,event_stem,**kwargs):
+#         super().__init__(rgbt_stem=event_stem,**kwargs)
     
-    def forward(self, events=None):
-        return super().forward(vision=events)
+#     def forward(self, events=None):
+#         return super().forward(vision=events)
 
 # initialize event model and add to image bind model
 class EventModel:
     def __init__(self,
-        event_embed_dim=768,
-        event_kernel_size=16,
-        event_num_blocks=12,
-        event_num_heads=12,
+        event_embed_dim=1280,
+        event_kernel_size=(2, 14, 14),
+        event_num_blocks=32,
+        event_num_heads=16,
         event_drop_path=0.0,
         out_embed_dim=1024):
         
@@ -59,35 +59,36 @@ class EventModel:
         self.event_postprocessor = self.create_event_postprocessor(out_embed_dim=out_embed_dim,logit_scale_init=10.0)
     
     def create_event_preprocessor(self,
-                                  event_embed_dim=768,
-                                  event_kernel_size=16):
+                                  event_embed_dim=1280,
+                                  event_kernel_size=(2, 14, 14)):
         event_stem = PatchEmbedGeneric(
-            [
-                nn.Conv2d(
+            proj_stem=[
+                PadIm2Video(pad_type="repeat", ntimes=2),
+                nn.Conv3d(
+                    in_channels=3,
                     kernel_size=event_kernel_size,
-                    in_channels=1,
                     out_channels=event_embed_dim,
                     stride=event_kernel_size,
                     bias=False,
                 ),
-            ],
-            norm_layer=nn.LayerNorm(normalized_shape=event_embed_dim),
+            ]
         )
-        event_preprocessor = EventPreprocessor(
-            img_size=[1, 224, 224],
+        event_preprocessor = RGBDTPreprocessor(
+            img_size=[3,2,224, 224],
             num_cls_tokens=1,
             pos_embed_fn=partial(SpatioTemporalPosEmbeddingHelper, learnable=True),
-            event_stem=event_stem,
+            rgbt_stem=event_stem,
+            depth_stem=None
         )
         return event_preprocessor
     
-    def create_event_trunk(self,event_embed_dim=768,event_num_blocks=12, event_num_heads=12,event_drop_path=0.0):
+    def create_event_trunk(self,event_embed_dim=1280,event_num_blocks=32, event_num_heads=16,event_drop_path=0.0):
         
         embed_dim=event_embed_dim
         num_blocks=event_num_blocks
         num_heads=event_num_heads
-        pre_transformer_ln=False
-        add_bias_kv=True
+        pre_transformer_ln=True
+        add_bias_kv=False
         drop_path=event_drop_path
         
         event_trunk=SimpleTransformer(
@@ -112,18 +113,15 @@ class EventModel:
             )
         return event_trunk
         
-    def create_event_head(self,out_embed_dim=768,event_embed_dim=768):
+    def create_event_head(self,out_embed_dim=1024,event_embed_dim=1280):
         return nn.Sequential(
             nn.LayerNorm(normalized_shape=event_embed_dim, eps=1e-6),
             SelectElement(index=0),
             nn.Linear(event_embed_dim, out_embed_dim, bias=False),
         )
     
-    def create_event_postprocessor(self,logit_scale_init,out_embed_dim=768):
-        return nn.Sequential(
-            Normalize(dim=-1),
-            LearnableLogitScaling(logit_scale_init=logit_scale_init, learnable=False),
-        )
+    def create_event_postprocessor(self,logit_scale_init,out_embed_dim=1024):
+        return Normalize(dim=-1)
     
     # add events modality preprocessor to the image bind model
     def apply_events_modality_preprocessor(self):
@@ -141,7 +139,7 @@ class EventModel:
     def apply_events_modality_postprocessor(self):
         return nn.ModuleDict({"event":self.event_postprocessor})
     
-    def load_weights(self,path='../.checkpoints/imagebind_huge.pth',modality="thermal"):
+    def load_weights(self,path='../.checkpoints/imagebind_huge.pth',modality="vision"):
         state_dict = torch.load(path)
         preprocessor_weights=[key for key in state_dict.keys() if key.startswith(f"modality_preprocessors.{modality}")]
         trunk_weights=[key for key in state_dict.keys() if key.startswith(f"modality_trunks.{modality}")]

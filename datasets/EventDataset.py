@@ -12,6 +12,44 @@ import os.path as op
 import numpy as np
 import cv2
 
+def resize_pad(frame, size=224):
+    """
+    resize a frame's longer side to 224, pad the shorter side to 224
+    """
+
+    # get shape
+    c, h, w = frame.shape
+
+    # get longer side
+    longer_side = max(h, w)
+
+    # calculate ratio
+    ratio = size / longer_side
+
+    # resize with transform
+    resize_transform = transforms.Resize((int(h * ratio), int(w * ratio)))
+    frame = resize_transform(frame)
+
+    # get new shape
+    c, h, w = frame.shape
+
+    # calculate padding needed to reach size for both dimensions
+    pad_height = (size - h) if h < size else 0
+    pad_width = (size - w) if w < size else 0
+
+    # calculate padding for each side to center the image
+    pad_top = pad_height // 2
+    pad_bottom = pad_height - pad_top
+    pad_left = pad_width // 2
+    pad_right = pad_width - pad_left
+
+    # apply padding
+    padding_transform = transforms.Pad(padding=(pad_left, pad_top, pad_right, pad_bottom), fill=0, padding_mode='constant')
+    frame = padding_transform(frame)
+
+    return frame
+
+
 def events_to_image_torch(xs, ys, ps,
         device=None, sensor_size=(260, 346), clip_out_of_range=False,
         interpolation=None, padding=True, default=0):
@@ -94,12 +132,12 @@ class EventDataset(Dataset):
             data_packet = pkl.load(f)
 
         events = data_packet['events'][0]
-        image_list = data_packet['images'] # 16, 260, 346
-        #convert to grayscale image
+        image_list = data_packet['images'] 
+        #convert to rgb image
         image_list=[cv2.cvtColor(np.array(image),cv2.COLOR_BGR2RGB) for image in image_list]
         image_list = np.stack(image_list, axis=0)
-        image_units = torch.from_numpy(image_list).float() / 255 # 2, 260, 346, 3
-        image_units=image_units.permute(0, 3, 1, 2) # 2,3,260,346
+        image_units = torch.from_numpy(image_list).float() / 255 
+        image_units=image_units.permute(3, 0, 1, 2) 
         image_units = self.frame_normalize(image_units)
         
         # replace polarity 0 with -1

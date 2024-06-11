@@ -224,8 +224,8 @@ def parse_args():
     parser.add_argument("--lora_rank", type=int, default=4, help="Rank of LoRA layers")
     parser.add_argument("--lora_checkpoint_dir", type=str, default="./.checkpoints/lora",
                         help="Directory to save LoRA checkpoint")
-    parser.add_argument("--lora_modality_names", nargs="+", type=str, default=["vision", "text"],
-                        choices=["vision", "text", "audio", "thermal", "depth", "imu"],
+    parser.add_argument("--lora_modality_names", nargs="+", type=str, default=["vision", "event"],
+                        choices=["vision", "text", "audio", "thermal", "depth", "imu","event"],
                         help="Modality names to apply LoRA")
     parser.add_argument("--lora_layer_idxs", nargs="+", type=int,
                         help="Layer indices to apply LoRA")
