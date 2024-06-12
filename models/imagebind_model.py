@@ -31,6 +31,7 @@ ModalityType = SimpleNamespace(
     THERMAL="thermal",
     DEPTH="depth",
     IMU="imu",
+    EVENT="event",
 )
 
 # modality_preprocessors, nn.ModuleDict, preprocessors for each modality
@@ -474,14 +475,14 @@ class ImageBindModel(nn.Module):
     def forward(self, inputs):
         outputs = {}
         for modality_key, modality_value in inputs.items():
-            reduce_list = (
-                modality_value.ndim >= 5
-            )  # Audio and Video inputs consist of multiple clips
-            if reduce_list:
-                B, S = modality_value.shape[:2]
-                modality_value = modality_value.reshape(
-                    B * S, *modality_value.shape[2:]
-                )
+            # reduce_list = (
+            #     modality_value.ndim >= 5
+            # )  # Audio and Video inputs consist of multiple clips
+            # if reduce_list:
+            #     B, S = modality_value.shape[:2]
+            #     modality_value = modality_value.reshape(
+            #         B * S, *modality_value.shape[2:]
+            #     )
 
             if modality_value is not None:
                 modality_value = self.modality_preprocessors[modality_key](
@@ -497,9 +498,9 @@ class ImageBindModel(nn.Module):
                     modality_value
                 )
 
-                if reduce_list:
-                    modality_value = modality_value.reshape(B, S, -1)
-                    modality_value = modality_value.mean(dim=1)
+                # if reduce_list:
+                #     modality_value = modality_value.reshape(B, S, -1)
+                #     modality_value = modality_value.mean(dim=1)
 
                 outputs[modality_key] = modality_value
 

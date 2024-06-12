@@ -11,6 +11,7 @@ import pickle as pkl
 import os.path as op
 import numpy as np
 import cv2
+from models.imagebind_model import ModalityType
 
 def resize_pad(frame, size=224):
     """
@@ -100,7 +101,7 @@ def events_to_image_torch(xs, ys, ps,
 
 class EventDataset(Dataset):
     
-    def __init__(self,mode, data_dir,partial_dataset=1, transform=None, device: str = 'cpu',seq_len=2,frame_size=(260, 346),path='data/paths.pkl'):
+    def __init__(self,mode, data_dir, transform=None,seq_len=2,frame_size=(260, 346),random_seed=42):
         
         self.mode=mode
         self.data_root = data_dir
@@ -109,25 +110,28 @@ class EventDataset(Dataset):
         self.frame_size = frame_size
         
         self.frame_normalize = transforms.Compose([
+                resize_pad,
                 transforms.Normalize([0.153, 0.153, 0.153], [0.165, 0.165, 0.165])])
+        self.paths = []
+        for file in os.listdir(data_dir):
+            if file.endswith('.pkl'):
+                self.paths.append(os.path.join(data_dir, file))
         
+        train_paths, test_paths = train_test_split(self.paths, train_size=0.8, random_state=random_seed)
         
-        with open(path, 'rb') as f:
-            self.paths_pack = pkl.load(f)
-            
-        if mode == 'train':
-            self.data_paths = self.paths_pack['train']
-        elif mode == 'val':
-            self.data_paths = self.paths_pack['val']
-        elif mode == 'test':
-            self.data_paths = self.paths_pack['test']
+        if self.mode == 'train':
+            self.data_paths = train_paths
+        elif self.mode == 'test':
+            self.data_paths = test_paths
+        else:
+            raise ValueError(f"Invalid mode argument. Expected 'train' or 'test', got {self.mode}")
         
 
     def __len__(self):
-        return int(self.partial_dataset*len(self.data_paths))
+        return len(self.data_paths)
 
     def __getitem__(self, idx):
-        data_path = op.join(self.data_root, self.data_paths[idx])
+        data_path = self.data_paths[idx]
         with open(data_path, 'rb') as f:
             data_packet = pkl.load(f)
 
@@ -137,8 +141,11 @@ class EventDataset(Dataset):
         image_list=[cv2.cvtColor(np.array(image),cv2.COLOR_BGR2RGB) for image in image_list]
         image_list = np.stack(image_list, axis=0)
         image_units = torch.from_numpy(image_list).float() / 255 
-        image_units=image_units.permute(3, 0, 1, 2) 
-        image_units = self.frame_normalize(image_units)
+        image_units=image_units.permute(0,3, 1, 2) 
+        image_units = [self.frame_normalize(image_units[i]) for i in range(image_units.shape[0])]
+        image_units = torch.stack(image_units)
+        image_units=image_units.permute(1,0,2,3)
+        
         
         # replace polarity 0 with -1
         events['polarity'][events['polarity']==0]=-1
@@ -151,12 +158,9 @@ class EventDataset(Dataset):
         
         # stack (positive,negative,positive+negative) channel
         event_frame=torch.stack([events_positive_frame,events_negative_frame,events_positive_frame+events_negative_frame],dim=0)
+        event_frame=resize_pad(event_frame)
         
             
-        return {
-            'image_units': image_units, # [2, 3, H, W]
-            'event_frame': event_frame, # [3, H, W]
-            'data_path': data_path
-        }
+        return image_units, ModalityType.VISION, event_frame, ModalityType.EVENT
     
     

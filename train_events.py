@@ -1,3 +1,6 @@
+# Based on PyTorch Lightning Tutorial 13 -
+# SSL : https://lightning.ai/docs/pytorch/stable/notebooks/course_UvA-DL/13-contrastive-learning.html
+# Modified by Fares Abawi (@fabawi).
 import logging
 import os
 import argparse
@@ -30,7 +33,9 @@ import torchvision
 from torchvision import transforms
 
 from models import imagebind_model
-from models import events
+from models import lora as LoRA
+from models.imagebind_model import ModalityType, load_module, save_module
+from models.events import EventModel
 
 logging.basicConfig(level=logging.INFO, force=True)
 
@@ -38,22 +43,72 @@ logging.basicConfig(level=logging.INFO, force=True)
 LOG_ON_STEP = True
 LOG_ON_EPOCH = True
 
+
+class ContrastiveTransformations:
+    def __init__(self, base_transforms, n_views=2):
+        self.base_transforms = base_transforms
+        self.n_views = n_views
+
+    def __call__(self, x):
+        return [self.base_transforms(x) for _ in range(self.n_views)]
+
+
 class ImageBindTrain(L.LightningModule):
     def __init__(self, lr=5e-4, weight_decay=1e-4, max_epochs=500, batch_size=32, num_workers=4, seed=42, 
-                 self_contrast=False, temperature=0.07,  momentum_betas=(0.9, 0.95), events_checkpoint=None
+                 self_contrast=False, temperature=0.07,  momentum_betas=(0.9, 0.95), 
+                 lora=False, lora_rank=4, lora_checkpoint_dir="./.checkpoints/lora",
+                 lora_layer_idxs=None, lora_modality_names=None,
+                 linear_probing=False
                  ):
         super().__init__()
-        
+        assert not (linear_probing and lora), \
+            "Linear probing is a subset of LoRA training procedure for ImageBind. " \
+            "Cannot set both linear_probing=True and lora=True. " \
+            "Linear probing stores params in lora_checkpoint_dir"
         self.save_hyperparameters()
+
+        # Load full pretrained ImageBind model
         self.model = imagebind_model.imagebind_huge(pretrained=True)
-        eventmodel=events.EventModel()
-        eventmodel.apply_event_layers(model=self.model,path='./.checkpoints/imagebind_huge.pth')
         
-        if events_checkpoint:
-            # load event modality weights
-            self.model.load_state_dict(torch.load(events_checkpoint))
+        # apply event layer
+        eventmodel=EventModel()
+        eventmodel.apply_event_layers(self.model)
         
-    
+        if lora:
+            for modality_preprocessor in self.model.modality_preprocessors.children():
+                modality_preprocessor.requires_grad_(False)
+            for modality_trunk in self.model.modality_trunks.children():
+                modality_trunk.requires_grad_(False)
+            
+            # add LoRA trunks to the model
+            self.model.modality_trunks.update(LoRA.apply_lora_modality_trunks(self.model.modality_trunks, rank=lora_rank,
+                                                                              layer_idxs=lora_layer_idxs,
+                                                                              modality_names=lora_modality_names))
+            
+            # Load LoRA checkpoint
+            LoRA.load_lora_modality_trunks(self.model.modality_trunks, checkpoint_dir=lora_checkpoint_dir)
+
+            # Load postprocessors & heads
+            load_module(self.model.modality_postprocessors, module_name="postprocessors",
+                        checkpoint_dir=lora_checkpoint_dir)
+            load_module(self.model.modality_heads, module_name="heads",
+                        checkpoint_dir=lora_checkpoint_dir)
+        # require grad for last layer of each modality head
+        elif linear_probing:
+            for modality_preprocessor in self.model.modality_preprocessors.children():
+                modality_preprocessor.requires_grad_(False)
+            for modality_trunk in self.model.modality_trunks.children():
+                modality_trunk.requires_grad_(False)
+            for modality_postprocessor in self.model.modality_postprocessors.children():
+                modality_postprocessor.requires_grad_(False)
+
+            load_module(self.model.modality_heads, module_name="heads",
+                        checkpoint_dir=lora_checkpoint_dir)
+            for modality_head in self.model.modality_heads.children():
+                modality_head.requires_grad_(False)
+                final_layer = list(modality_head.children())[-1]
+                final_layer.requires_grad_(True)
+
     def configure_optimizers(self):
         optimizer = optim.AdamW(self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay, 
                                 betas=self.hparams.momentum_betas)
@@ -62,13 +117,8 @@ class ImageBindTrain(L.LightningModule):
         )
         return [optimizer], [lr_scheduler]
 
-
     def info_nce_loss(self, batch, mode="train"):
-        # data_a, class_a, data_b, class_b = batch
-        data_a=batch['image_units']
-        class_a="vision"
-        data_b=batch['event_frame']
-        class_b="event"
+        data_a, class_a, data_b, class_b = batch
 
         # class_a is always "vision" according to ImageBind
         feats_a = [self.model({class_a[0]: data_a_i}) for data_a_i in data_a]
@@ -127,36 +177,35 @@ class ImageBindTrain(L.LightningModule):
         self.log(mode + "_loss", dual_nll, prog_bar=True,
                  on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
         return dual_nll
-            
+
     def training_step(self, batch, batch_idx):
-            return self.info_nce_loss(batch, mode="train")
+        return self.info_nce_loss(batch, mode="train")
 
     def validation_step(self, batch, batch_idx):
         self.info_nce_loss(batch, mode="val")
-    
-    # def on_validation_epoch_end(self):
-    #     if self.hparams.lora:
-    #         # Save LoRA checkpoint
-    #         LoRA.save_lora_modality_trunks(self.model.modality_trunks, checkpoint_dir=self.hparams.lora_checkpoint_dir)
-    #         # Save postprocessors & heads
-    #         save_module(self.model.modality_postprocessors, module_name="postprocessors",
-    #                     checkpoint_dir=self.hparams.lora_checkpoint_dir)
-    #         save_module(self.model.modality_heads, module_name="heads",
-    #                     checkpoint_dir=self.hparams.lora_checkpoint_dir)
-    #     elif self.hparams.linear_probing:
-    #         # Save postprocessors & heads
-    #         save_module(self.model.modality_heads, module_name="heads",
-    #                     checkpoint_dir=self.hparams.lora_checkpoint_dir)
-    
+
+    def on_validation_epoch_end(self):
+        if self.hparams.lora:
+            # Save LoRA checkpoint
+            LoRA.save_lora_modality_trunks(self.model.modality_trunks, checkpoint_dir=self.hparams.lora_checkpoint_dir)
+            # Save postprocessors & heads
+            save_module(self.model.modality_postprocessors, module_name="postprocessors",
+                        checkpoint_dir=self.hparams.lora_checkpoint_dir)
+            save_module(self.model.modality_heads, module_name="heads",
+                        checkpoint_dir=self.hparams.lora_checkpoint_dir)
+        elif self.hparams.linear_probing:
+            # Save postprocessors & heads
+            save_module(self.model.modality_heads, module_name="heads",
+                        checkpoint_dir=self.hparams.lora_checkpoint_dir)
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train the ImageBind model with PyTorch Lightning and Events.")
+    parser = argparse.ArgumentParser(description="Train the ImageBind model with PyTorch Lightning and LoRA.")
     parser.add_argument("--seed", type=int, default=43, help="Random seed for reproducibility")
     parser.add_argument("--device", type=str, default="cpu", help="Device to use for training ('cpu' or 'cuda')")
-    parser.add_argument("--datasets_dir", type=str, default="/tsukimi/datasets/Chiba/finetune_train/",
+    parser.add_argument("--datasets_dir", type=str, default="./.datasets",
                         help="Directory containing the datasets")
-    parser.add_argument("--datasets", type=str, nargs="+", default=["EventDataset"], choices=["dreambooth","EventDataset"],
+    parser.add_argument("--datasets", type=str, nargs="+", default=["event"], choices=["dreambooth","event"],
                         help="Datasets to use for training and validation")
     parser.add_argument("--full_model_checkpoint_dir", type=str, default="./.checkpoints/full",
                         help="Directory to save the full model checkpoints")
@@ -181,8 +230,8 @@ def parse_args():
     parser.add_argument("--lora_rank", type=int, default=4, help="Rank of LoRA layers")
     parser.add_argument("--lora_checkpoint_dir", type=str, default="./.checkpoints/lora",
                         help="Directory to save LoRA checkpoint")
-    parser.add_argument("--lora_modality_names", nargs="+", type=str, default=["vision", "text"],
-                        choices=["vision", "text", "audio", "thermal", "depth", "imu"],
+    parser.add_argument("--lora_modality_names", nargs="+", type=str, default=["vision", "event"],
+                        choices=["vision", "text", "audio", "thermal", "depth", "imu","event"],
                         help="Modality names to apply LoRA")
     parser.add_argument("--lora_layer_idxs", nargs="+", type=int,
                         help="Layer indices to apply LoRA")
@@ -198,6 +247,8 @@ def parse_args():
                         help="Layer indices to apply LoRA for depth modality. Overrides lora_layer_idxs if specified")
     parser.add_argument("--lora_layer_idxs_imu", nargs="+", type=int,
                         help="Layer indices to apply LoRA for imu modality. Overrides lora_layer_idxs if specified")
+    parser.add_argument("--lora_layer_idxs_event", nargs="+", type=int,
+                        help="Layer indices to apply LoRA for event modality. Overrides lora_layer_idxs if specified")
 
     parser.add_argument("--linear_probing", action="store_true",
                         help="Freeze model and train the last layers of the head for each modality.")
@@ -250,8 +301,8 @@ if __name__ == "__main__":
 
     contrast_transforms = transforms.Compose(
         [
-            # transforms.RandomHorizontalFlip(),
-            # transforms.RandomResizedCrop(size=224),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomResizedCrop(size=224),
             transforms.RandomApply([transforms.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.1)],
                                    p=0.8),
             transforms.RandomGrayscale(p=0.2),
@@ -267,13 +318,23 @@ if __name__ == "__main__":
     test_datasets = []
 
     # Load datasets
-    if "EventDataset" in args.datasets:
+    if "dreambooth" in args.datasets:
+        from datasets.dreambooth import DreamBoothDataset
+        train_datasets.append(DreamBoothDataset(
+            root_dir=os.path.join(args.datasets_dir, "dreambooth", "dataset"), split="train",
+            transform=ContrastiveTransformations(contrast_transforms,
+                                                 n_views=2 if args.self_contrast else 1)))
+        test_datasets.append(DreamBoothDataset(
+            root_dir=os.path.join(args.datasets_dir, "dreambooth", "dataset"), split="test",
+            transform=ContrastiveTransformations(contrast_transforms,
+                                                 n_views=2 if args.self_contrast else 1)))
+    
+    if "event" in args.datasets:
         from datasets.EventDataset import EventDataset
-        train_datasets.append(EventDataset(
-            mode="train", data_dir=os.path.join(args.datasets_dir)))
-        test_datasets.append(EventDataset(
-            mode="test", data_dir=os.path.join(args.datasets_dir)))
-
+        train_datasets.append(EventDataset(data_dir=args.datasets_dir, mode="train"))
+        test_datasets.append(EventDataset(data_dir=args.datasets_dir, mode="test"))
+    
+    # add event dataset
     if len(args.datasets) == 1:
         train_dataset = train_datasets[0]
         test_dataset = test_datasets[0]
@@ -298,8 +359,6 @@ if __name__ == "__main__":
         num_workers=args.num_workers,
     )
 
-    raise NotImplementedError
-    
     # Visualize some examples
     if not args.headless:
         NUM_IMAGES = args.batch_size
@@ -317,7 +376,7 @@ if __name__ == "__main__":
     # Parse indices of layers to apply LoRA
     lora_layer_idxs = {}
     lora_modality_names = []
-    modalities = ["vision", "text", "audio", "thermal", "depth", "imu"]
+    modalities = ["vision", "text", "audio", "thermal", "depth", "imu","event"]
     for modality_name in args.lora_modality_names:
         if modality_name in modalities:
             modality_type = getattr(ModalityType, modality_name.upper())
@@ -347,8 +406,9 @@ if __name__ == "__main__":
         checkpointing = {"enable_checkpointing": args.full_model_checkpointing,}
 
     trainer = Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
-                      devices=1 if ":" not in device_name else [int(device_name.split(":")[1])], deterministic=True,
+                      devices=1 if ":" not in device_name else int(device_name.split(":")[1]), deterministic=True,
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
                       logger=loggers if loggers else None, **checkpointing)
 
     trainer.fit(model, train_loader, val_loader)
+

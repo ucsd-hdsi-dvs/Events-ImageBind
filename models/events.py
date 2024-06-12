@@ -25,6 +25,7 @@ from models.multimodal_preprocessors import (AudioPreprocessor,
                                              ThermalPreprocessor)
 from models.transformer import MultiheadAttention, SimpleTransformer
 from models.imagebind_model import ImageBindModel
+from models.imagebind_model import ModalityType
 
 # save events modality 
 def save_events_modality_trunks():
@@ -34,13 +35,13 @@ def save_events_modality_trunks():
 def load_events_modality_trunks():
     raise NotImplementedError
 
-# # preprocessor for event stream
-# class EventPreprocessor(RGBDTPreprocessor):
-#     def __init__(self,event_stem,**kwargs):
-#         super().__init__(rgbt_stem=event_stem,**kwargs)
+# preprocessor for event stream
+class EventPreprocessor(RGBDTPreprocessor):
+    def __init__(self,event_stem,**kwargs):
+        super().__init__(rgbt_stem=event_stem,**kwargs)
     
-#     def forward(self, events=None):
-#         return super().forward(vision=events)
+    def forward(self, event=None):
+        return super().forward(vision=event)
 
 # initialize event model and add to image bind model
 class EventModel:
@@ -73,11 +74,11 @@ class EventModel:
                 ),
             ]
         )
-        event_preprocessor = RGBDTPreprocessor(
+        event_preprocessor = EventPreprocessor(
+            event_stem=event_stem,
             img_size=[3,2,224, 224],
             num_cls_tokens=1,
             pos_embed_fn=partial(SpatioTemporalPosEmbeddingHelper, learnable=True),
-            rgbt_stem=event_stem,
             depth_stem=None
         )
         return event_preprocessor
@@ -125,19 +126,19 @@ class EventModel:
     
     # add events modality preprocessor to the image bind model
     def apply_events_modality_preprocessor(self):
-        return nn.ModuleDict({"event":self.event_preprocessor})
+        return nn.ModuleDict({ModalityType.EVENT:self.event_preprocessor})
 
     # add events trunk to the image bind model
     def apply_events_modality_trunks(self):
-        return nn.ModuleDict({"event":self.event_trunk})
+        return nn.ModuleDict({ModalityType.EVENT:self.event_trunk})
 
     # add events modality head to the image bind model
     def apply_events_modality_head(self):
-        return nn.ModuleDict({"event":self.event_head})
+        return nn.ModuleDict({ModalityType.EVENT:self.event_head})
 
     # add events modality postprocessor to the image bind model
     def apply_events_modality_postprocessor(self):
-        return nn.ModuleDict({"event":self.event_postprocessor})
+        return nn.ModuleDict({ModalityType.EVENT:self.event_postprocessor})
     
     def load_weights(self,path='../.checkpoints/imagebind_huge.pth',modality="vision"):
         state_dict = torch.load(path)
@@ -160,7 +161,7 @@ class EventModel:
         load_layer(self.event_postprocessor,postprocessor_weights)
             
     
-    def apply_event_layers(self,model,path='../.checkpoints/imagebind_huge.pth'):
+    def apply_event_layers(self,model,path='.checkpoints/imagebind_huge.pth'):
         # check model is instance of image bind model
         assert isinstance(model,ImageBindModel)
         
