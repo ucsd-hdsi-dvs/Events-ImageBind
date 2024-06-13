@@ -485,6 +485,7 @@ class ImageBindModel(nn.Module):
             #     )
 
             if modality_value is not None:
+                # print(modality_key,modality_value.shape)
                 modality_value = self.modality_preprocessors[modality_key](
                     **{modality_key: modality_value}
                 )

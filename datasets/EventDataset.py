@@ -160,7 +160,6 @@ class EventDataset(Dataset):
         event_frame=torch.stack([events_positive_frame,events_negative_frame,events_positive_frame+events_negative_frame],dim=0)
         event_frame=resize_pad(event_frame)
         
-            
         return image_units, ModalityType.VISION, event_frame, ModalityType.EVENT
     
     
