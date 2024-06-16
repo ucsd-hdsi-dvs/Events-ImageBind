@@ -74,6 +74,11 @@ class ImageBindTrain(L.LightningModule):
         eventmodel=EventModel()
         eventmodel.apply_event_layers(self.model)
         
+        for modality_preprocessor in self.model.modality_preprocessors.children():
+                modality_preprocessor.requires_grad_(False)
+        for modality_trunk in self.model.modality_trunks.children():
+            modality_trunk.requires_grad_(False)
+        
         if lora:
             for modality_preprocessor in self.model.modality_preprocessors.children():
                 modality_preprocessor.requires_grad_(False)
@@ -121,12 +126,11 @@ class ImageBindTrain(L.LightningModule):
         data_a, class_a, data_b, class_b = batch
 
         # class_a is always "vision" according to ImageBind
-        feats_a = [self.model({class_a[0]: data_a_i}) for data_a_i in data_a]
-        feats_a_tensor = torch.cat([list(dict_.values())[0] for dict_ in feats_a], dim=0)
+        feats_a_tensor = list(self.model({class_a[0]: data_a}).values())[0]
         # class_b could be any modality
-        feats_b = [self.model({class_b[idx]: data_b_i}) for idx, data_b_i in enumerate(data_b)]
-        feats_b_tensor = torch.cat([list(dict_.values())[0] for dict_ in feats_b], dim=0)
-
+        feats_b = self.model({class_b[0]: data_b})
+        feats_b_tensor = list(feats_b.values())[0]
+        
         if self.hparams.self_contrast:
             feats_a_b_tensor = torch.cat([feats_a_tensor.chunk(2)[0], feats_b_tensor], dim=0)
             feats_tensors = [feats_a_tensor, feats_a_b_tensor]
@@ -137,7 +141,7 @@ class ImageBindTrain(L.LightningModule):
             feats_tensors = [feats_a_b_tensor]
             temperatures = [self.hparams.temperature]
             contrast = ["cross"]
-
+        
         # Accumulate self-contrastive loss for image and its augmentation, and modailty with image
         dual_nll = False
         for feats_idx, feats_tensor in enumerate(feats_tensors):
@@ -159,7 +163,7 @@ class ImageBindTrain(L.LightningModule):
                 dual_nll /= 2
             # Logging loss
             self.log(mode + "_loss_" + contrast[feats_idx], nll, prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size,sync_dist=True)
             # Get ranking position of positive example
             comb_sim = torch.cat(
                 [cos_sim[pos_mask][:, None], cos_sim.masked_fill(pos_mask, -9e15)],  # First position positive example
@@ -168,14 +172,14 @@ class ImageBindTrain(L.LightningModule):
             sim_argsort = comb_sim.argsort(dim=-1, descending=True).argmin(dim=-1)
             # Logging ranking metrics
             self.log(mode + "_acc_top1", (sim_argsort == 0).float().mean(), prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size,sync_dist=True)
             self.log(mode + "_acc_top5", (sim_argsort < 5).float().mean(), prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size,sync_dist=True)
             self.log(mode + "_acc_mean_pos", 1 + sim_argsort.float().mean(), prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size,sync_dist=True)
 
         self.log(mode + "_loss", dual_nll, prog_bar=True,
-                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size,sync_dist=True)
         return dual_nll
 
     def training_step(self, batch, batch_idx):
@@ -263,7 +267,7 @@ if __name__ == "__main__":
     loggers = []
     for logger in args.loggers if args.loggers is not None else []:
         if logger == "wandb":
-            wandb.init(project="imagebind", config=args)
+            wandb.init(project="imagebind_finetune", config=args)
             wandb_logger = pl_loggers.WandbLogger(
                 save_dir=args.loggers_dir,
                 name="imagebind")
@@ -271,7 +275,7 @@ if __name__ == "__main__":
         elif logger == "tensorboard":
             tensorboard_logger = pl_loggers.TensorBoardLogger(
                 save_dir=args.loggers_dir,
-                name="imagebind")
+                name="imagebind_finetune")
             loggers.append(tensorboard_logger)
         elif logger == "comet":
             comet_logger = pl_loggers.CometLogger(
@@ -347,7 +351,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         shuffle=True,
         drop_last=True,
-        pin_memory=False,
+        pin_memory=True,
         num_workers=args.num_workers,
     )
     val_loader = DataLoader(
@@ -355,23 +359,9 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         shuffle=False,
         drop_last=False,
-        pin_memory=False,
+        pin_memory=True,
         num_workers=args.num_workers,
     )
-
-    # Visualize some examples
-    if not args.headless:
-        NUM_IMAGES = args.batch_size
-        imgs = [torch.stack(train_dataset[idx][0], dim=0) for idx in range(NUM_IMAGES)]
-        imgs = torch.stack(imgs, dim=0)
-        img_grid = torchvision.utils.make_grid(imgs.reshape(-1, *imgs.shape[2:]), nrow=6, normalize=True, pad_value=0.9)
-        img_grid = img_grid.permute(1, 2, 0)
-        plt.figure(figsize=(10, 5))
-        plt.title(f"Augmented image examples of the available datasets: {args.datasets}")
-        plt.imshow(img_grid.cpu())
-        plt.axis("off")
-        plt.show()
-        plt.close()
 
     # Parse indices of layers to apply LoRA
     lora_layer_idxs = {}
@@ -408,7 +398,7 @@ if __name__ == "__main__":
     trainer = Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
                       devices=1 if ":" not in device_name else int(device_name.split(":")[1]), deterministic=True,
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
-                      logger=loggers if loggers else None, **checkpointing)
+                      logger=loggers if loggers else None, strategy='ddp_find_unused_parameters_true', **checkpointing)
 
     trainer.fit(model, train_loader, val_loader)
 

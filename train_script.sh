@@ -6,12 +6,13 @@ log_dir='/tsukimi/datasets/Chiba/finetune_checkpoint/logs'
 
 python train_events.py --full_model_checkpoint_dir ${check_dir} \
     --full_model_checkpointing \
-    --device cuda \
+    --device cuda:4 \
     --datasets_dir ${data_dir} \
-    --loggers wandb tensorboard \
+    --loggers tensorboard \
     --loggers_dir ${log_dir} \
     --max_epochs 100 \
     --headless \
-    --num_workers 4 \
+    --num_workers 1 \
+    --batch_size 2 \
     # --lora \
 
