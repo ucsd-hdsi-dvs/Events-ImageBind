@@ -8,11 +8,10 @@ python train_events.py --full_model_checkpoint_dir ${check_dir} \
     --full_model_checkpointing \
     --device cuda:4 \
     --datasets_dir ${data_dir} \
-    --loggers tensorboard \
+    --loggers wandb \
     --loggers_dir ${log_dir} \
     --max_epochs 100 \
     --headless \
-    --num_workers 1 \
-    --batch_size 2 \
-    # --lora \
+    --num_workers 4 \
+    --batch_size 4 \
 

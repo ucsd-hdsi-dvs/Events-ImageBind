@@ -126,10 +126,11 @@ class ImageBindTrain(L.LightningModule):
         data_a, class_a, data_b, class_b = batch
 
         # class_a is always "vision" according to ImageBind
-        feats_a_tensor = list(self.model({class_a[0]: data_a}).values())[0]
+        feats_a = [self.model({class_a[0]: data_a_i.unsqueeze(0)}) for data_a_i in data_a]
+        feats_a_tensor = torch.cat([list(dict_.values())[0] for dict_ in feats_a], dim=0)
         # class_b could be any modality
-        feats_b = self.model({class_b[0]: data_b})
-        feats_b_tensor = list(feats_b.values())[0]
+        feats_b = [self.model({class_b[idx]: data_b_i.unsqueeze(0)}) for idx, data_b_i in enumerate(data_b)]
+        feats_b_tensor = torch.cat([list(dict_.values())[0] for dict_ in feats_b], dim=0)
         
         if self.hparams.self_contrast:
             feats_a_b_tensor = torch.cat([feats_a_tensor.chunk(2)[0], feats_b_tensor], dim=0)
@@ -264,39 +265,42 @@ if __name__ == "__main__":
     args = parse_args()
 
     # Create loggers
-    loggers = []
-    for logger in args.loggers if args.loggers is not None else []:
-        if logger == "wandb":
-            wandb.init(project="imagebind_finetune", config=args)
-            wandb_logger = pl_loggers.WandbLogger(
-                save_dir=args.loggers_dir,
-                name="imagebind")
-            loggers.append(wandb_logger)
-        elif logger == "tensorboard":
-            tensorboard_logger = pl_loggers.TensorBoardLogger(
-                save_dir=args.loggers_dir,
-                name="imagebind_finetune")
-            loggers.append(tensorboard_logger)
-        elif logger == "comet":
-            comet_logger = pl_loggers.CometLogger(
-                save_dir=args.loggers_dir,
-                api_key=os.environ["COMET_API_KEY"],
-                workspace=os.environ["COMET_WORKSPACE"],
-                project_name=os.environ["COMET_PROJECT_NAME"],
-                experiment_name=os.environ.get("COMET_EXPERIMENT_NAME", None),
-            )
-            loggers.append(comet_logger)
-        elif logger == "mlflow":
-            mlflow_logger = pl_loggers.MLFlowLogger(
-                save_dir=args.loggers_dir,
-                experiment_name=os.environ["MLFLOW_EXPERIMENT_NAME"],
-                tracking_uri=os.environ["MLFLOW_TRACKING_URI"],
-                run_name="imagebind"
-            )
-            loggers.append(mlflow_logger)
-        else:
-            raise ValueError(f"Unknown logger: {logger}")
-
+    # loggers = []
+    # for logger in args.loggers if args.loggers is not None else []:
+    #     if logger == "wandb":
+    #         wandb.init(project="imagebind_finetune", config=args)
+    #         wandb_logger = pl_loggers.WandbLogger(
+    #             save_dir=args.loggers_dir,
+    #             name="imagebind")
+    #         loggers.append(wandb_logger)
+    #     elif logger == "tensorboard":
+    #         tensorboard_logger = pl_loggers.TensorBoardLogger(
+    #             save_dir=args.loggers_dir,
+    #             name="imagebind_finetune")
+    #         loggers.append(tensorboard_logger)
+    #     elif logger == "comet":
+    #         comet_logger = pl_loggers.CometLogger(
+    #             save_dir=args.loggers_dir,
+    #             api_key=os.environ["COMET_API_KEY"],
+    #             workspace=os.environ["COMET_WORKSPACE"],
+    #             project_name=os.environ["COMET_PROJECT_NAME"],
+    #             experiment_name=os.environ.get("COMET_EXPERIMENT_NAME", None),
+    #         )
+    #         loggers.append(comet_logger)
+    #     elif logger == "mlflow":
+    #         mlflow_logger = pl_loggers.MLFlowLogger(
+    #             save_dir=args.loggers_dir,
+    #             experiment_name=os.environ["MLFLOW_EXPERIMENT_NAME"],
+    #             tracking_uri=os.environ["MLFLOW_TRACKING_URI"],
+    #             run_name="imagebind"
+    #         )
+    #         loggers.append(mlflow_logger)
+    #     else:
+    #         raise ValueError(f"Unknown logger: {logger}")
+    wandb_logger = pl_loggers.WandbLogger(
+                project="imagebind_finetune")
+    
+    
     # Set experiment properties
     seed_everything(args.seed, workers=True)
     torch.backends.cudnn.determinstic = True
@@ -351,7 +355,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         shuffle=True,
         drop_last=True,
-        pin_memory=True,
+        pin_memory=False,
         num_workers=args.num_workers,
     )
     val_loader = DataLoader(
@@ -359,7 +363,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         shuffle=False,
         drop_last=False,
-        pin_memory=True,
+        pin_memory=False,
         num_workers=args.num_workers,
     )
 
@@ -398,7 +402,7 @@ if __name__ == "__main__":
     trainer = Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
                       devices=1 if ":" not in device_name else int(device_name.split(":")[1]), deterministic=True,
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
-                      logger=loggers if loggers else None, strategy='ddp_find_unused_parameters_true', **checkpointing)
+                      logger=wandb_logger, strategy='ddp_find_unused_parameters_true', **checkpointing)
 
     trainer.fit(model, train_loader, val_loader)
 
