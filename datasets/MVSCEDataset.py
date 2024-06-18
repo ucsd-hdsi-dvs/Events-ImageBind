@@ -132,5 +132,34 @@ def MVSECDataset(Dataset):
             data_packet = pkl.load(f)
         
         events=data_packet['events'] # 16* (x,y,t,p)
-        image_units = np.stack([data_packet['images'][:-1], data_packet['images'][1:]], axis=1) # 16, 2, 260, 346
+        
+        image_units=[]
+        for i in range(len(data_packet['images'])):
+            image=data_packet['images'][i]
+            # convert to 3 channels
+            image=np.repeat(image[...,None],3,axis=2).transpose(2,0,1)
+            image_units.append(image)
+        
+        image_units = np.stack([image_units[:-1], image_units[1:]], axis=1) # 16, 2, 3, 260, 346
+        
+        image_units = torch.from_numpy(image_units).float() / 255
+        for i in range(image_units.shape[0]):
+            for j in range(image_units.shape[1]):
+                image_units[i,j] = self.frame_normalize(image_units[i,j])
+        
+        # convert events to event frame
+        eventframes=[]
+        for events in data_packet['events']:
+            events['polarity'][events['polarity']==0]=-1
+            events_positive=events[events['polarity']==1]
+            events_negative=events[events['polarity']==-1]
+            events_positive_frame=events_to_image_torch(events_positive['x'],events_positive['y'],events_positive['polarity'])
+            events_negative_frame=events_to_image_torch(events_negative['x'],events_negative['y'],events_negative['polarity'])
+            event_frame=torch.stack([events_positive_frame,events_negative_frame,events_positive_frame+events_negative_frame],dim=0)
+            event_frame=resize_pad(event_frame)
+            
+            eventframes.append(event_frame)
+        eventframes=torch.stack(eventframes)
+        
+        return image_units,ModalityType.VISION, eventframes, ModalityType.EVENT
         

@@ -12,6 +12,6 @@ python train_events.py --full_model_checkpoint_dir ${check_dir} \
     --loggers_dir ${log_dir} \
     --max_epochs 100 \
     --headless \
-    --num_workers 4 \
+    --num_workers 2 \
     --batch_size 4 \
 
