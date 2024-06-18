@@ -210,7 +210,7 @@ def parse_args():
     parser.add_argument("--device", type=str, default="cpu", help="Device to use for training ('cpu' or 'cuda')")
     parser.add_argument("--datasets_dir", type=str, default="./.datasets",
                         help="Directory containing the datasets")
-    parser.add_argument("--datasets", type=str, nargs="+", default=["event"], choices=["dreambooth","event"],
+    parser.add_argument("--datasets", type=str, nargs="+", default=["mvsce"], choices=["dreambooth","event","mvsce"],
                         help="Datasets to use for training and validation")
     parser.add_argument("--full_model_checkpoint_dir", type=str, default="./.checkpoints/full",
                         help="Directory to save the full model checkpoints")
@@ -342,6 +342,11 @@ if __name__ == "__main__":
         train_datasets.append(EventDataset(data_dir=args.datasets_dir, mode="train"))
         test_datasets.append(EventDataset(data_dir=args.datasets_dir, mode="test"))
     
+    if "mvsce" in args.datasets:
+        from datasets.MVSCEDataset import MVSCEDataset
+        train_datasets.append(MVSCEDataset(data_dir=args.datasets_dir, mode="train"))
+        test_datasets.append(MVSCEDataset(data_dir=args.datasets_dir, mode="test"))
+        
     # add event dataset
     if len(args.datasets) == 1:
         train_dataset = train_datasets[0]

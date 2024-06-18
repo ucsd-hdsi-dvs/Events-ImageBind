@@ -5,7 +5,6 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 import torch
 from models.imagebind_model import ModalityType
-import data
 from torchvision import transforms
 import pickle as pkl
 import os.path as op
@@ -98,7 +97,7 @@ def events_to_image_torch(xs, ys, ps,
         raise e
     return img
 
-def MVSECDataset(Dataset):
+class MVSCEDataset(Dataset):
     
     def __init__(self,mode, data_dir, transform=None,seq_len=2,frame_size=(260, 346),random_seed=42):
         self.mode=mode
@@ -138,14 +137,13 @@ def MVSECDataset(Dataset):
             image=data_packet['images'][i]
             # convert to 3 channels
             image=np.repeat(image[...,None],3,axis=2).transpose(2,0,1)
+            image=torch.from_numpy(image).float()/255
+            image=self.frame_normalize(image)
             image_units.append(image)
         
-        image_units = np.stack([image_units[:-1], image_units[1:]], axis=1) # 16, 2, 3, 260, 346
-        
-        image_units = torch.from_numpy(image_units).float() / 255
-        for i in range(image_units.shape[0]):
-            for j in range(image_units.shape[1]):
-                image_units[i,j] = self.frame_normalize(image_units[i,j])
+        image_units=torch.stack(image_units) # 16, 3, 224, 224
+        image_units=torch.stack([image_units[:-1],image_units[1:]],dim=1) # 16, 2, 3, 224, 224
+        # image_units = np.stack([image_units[:-1], image_units[1:]], axis=1) # 16, 2, 3, 260, 346
         
         # convert events to event frame
         eventframes=[]
