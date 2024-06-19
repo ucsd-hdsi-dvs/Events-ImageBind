@@ -141,8 +141,8 @@ class MVSCEDataset(Dataset):
             image=self.frame_normalize(image)
             image_units.append(image)
         
-        image_units=torch.stack(image_units) # 16, 3, 224, 224
-        image_units=torch.stack([image_units[:-1],image_units[1:]],dim=1) # 16, 2, 3, 224, 224
+        image_units=torch.stack(image_units) # 17, 3, 224, 224
+        image_units=torch.stack([image_units[:-1],image_units[1:]],dim=2) # 16, 3,2, 224, 224
         # image_units = np.stack([image_units[:-1], image_units[1:]], axis=1) # 16, 2, 3, 260, 346
         
         # convert events to event frame

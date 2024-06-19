@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-data_dir='/tsukimi/datasets/Chiba/finetune_train'
+data_dir='/tsukimi/datasets/MVSEC/event_chunks_10t'
 check_dir='/tsukimi/datasets/Chiba/finetune_checkpoint/checkpoints'
 log_dir='/tsukimi/datasets/Chiba/finetune_checkpoint/logs'
 
@@ -13,5 +13,5 @@ python train_events.py --full_model_checkpoint_dir ${check_dir} \
     --max_epochs 100 \
     --headless \
     --num_workers 4 \
-    --batch_size 16 \
+    --batch_size 1 \
 

@@ -126,10 +126,10 @@ class ImageBindTrain(L.LightningModule):
         data_a, class_a, data_b, class_b = batch
 
         # class_a is always "vision" according to ImageBind
-        feats_a = [self.model({class_a[0]: data_a_i.unsqueeze(0)}) for data_a_i in data_a]
+        feats_a = [self.model({class_a[0]: data_a_i}) for data_a_i in data_a]
         feats_a_tensor = torch.cat([list(dict_.values())[0] for dict_ in feats_a], dim=0)
         # class_b could be any modality
-        feats_b = [self.model({class_b[idx]: data_b_i.unsqueeze(0)}) for idx, data_b_i in enumerate(data_b)]
+        feats_b = [self.model({class_b[idx]: data_b_i}) for idx, data_b_i in enumerate(data_b)]
         feats_b_tensor = torch.cat([list(dict_.values())[0] for dict_ in feats_b], dim=0)
         
         if self.hparams.self_contrast:
