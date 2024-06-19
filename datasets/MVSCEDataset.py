@@ -108,6 +108,9 @@ class MVSCEDataset(Dataset):
         self.frame_normalize = transforms.Compose([
                 resize_pad,
                 transforms.Normalize([0.153, 0.153, 0.153], [0.165, 0.165, 0.165])])
+        
+        self.event_frame_normalize = transforms.Compose([])
+        
         self.paths = []
         for file in os.listdir(data_dir):
             if file.endswith('.pkl'):
@@ -153,9 +156,12 @@ class MVSCEDataset(Dataset):
             events_negative=events[events['polarity']==-1]
             events_positive_frame=events_to_image_torch(events_positive['x'],events_positive['y'],events_positive['polarity'])
             events_negative_frame=events_to_image_torch(events_negative['x'],events_negative['y'],events_negative['polarity'])
-            event_frame=torch.stack([events_positive_frame,events_negative_frame,events_positive_frame+events_negative_frame],dim=0)
-            event_frame=resize_pad(event_frame)
+            # abs negative channel
+            events_negative_frame=torch.abs(events_negative_frame)
+            events_sum_frame=events_positive_frame+events_negative_frame
             
+            event_frame=torch.stack([events_positive_frame,events_negative_frame,events_sum_frame],dim=0)
+            # event_frame=resize_pad(event_frame)
             eventframes.append(event_frame)
         eventframes=torch.stack(eventframes)
         
