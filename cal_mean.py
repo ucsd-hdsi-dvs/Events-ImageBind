@@ -19,12 +19,14 @@ n_pixels = 0
 for i, (img, _, event_frame, _) in enumerate(dataloader):
     # print progress
     print(f"\r{i}/{len(dataloader)}", end="")
-    for ef in event_frame:
+    for ef in event_frame.squeeze(0):
         sum += ef.sum(dim=[1, 2])
-        sum_of_squares += (event_frame ** 2).sum(dim=[1, 2])
+        sum_of_squares += (ef ** 2).sum(dim=[1, 2])
         n_pixels+=ef.numel()// 3
     
     mean = sum / n_pixels
     std = torch.sqrt(sum_of_squares / n_pixels - mean ** 2)
     print("\nMean:", mean)
     print("Std:", std)
+
+
