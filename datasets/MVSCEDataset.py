@@ -107,7 +107,7 @@ class MVSCEDataset(Dataset):
         self.frame_size = frame_size
         self.frame_normalize = transforms.Compose([
                 resize_pad,
-                transforms.Normalize([0.153, 0.153, 0.153], [0.165, 0.165, 0.165])])
+                transforms.Normalize([0.127, 0.143, 0.267], [0.581, 0.610, 1.05])])
         
         self.event_frame_normalize = transforms.Compose([])
         
