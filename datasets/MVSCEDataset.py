@@ -107,9 +107,11 @@ class MVSCEDataset(Dataset):
         self.frame_size = frame_size
         self.frame_normalize = transforms.Compose([
                 resize_pad,
-                transforms.Normalize([0.127, 0.143, 0.267], [0.581, 0.610, 1.05])])
+                transforms.Normalize([0.153, 0.153, 0.153], [0.165, 0.165, 0.165])])
         
-        self.event_frame_normalize = transforms.Compose([])
+        self.event_frame_normalize = transforms.Compose([
+                resize_pad,
+                transforms.Normalize([0.127, 0.143, 0.267], [0.581, 0.610, 1.05])])
         
         self.paths = []
         for file in os.listdir(data_dir):
@@ -133,7 +135,6 @@ class MVSCEDataset(Dataset):
         with open(data_path, 'rb') as f:
             data_packet = pkl.load(f)
         
-        events=data_packet['events'] # 16* (x,y,t,p)
         
         image_units=[]
         for i in range(len(data_packet['images'])):
@@ -144,26 +145,24 @@ class MVSCEDataset(Dataset):
             image=self.frame_normalize(image)
             image_units.append(image)
         
-        image_units=torch.stack(image_units) # 17, 3, 224, 224
-        image_units=torch.stack([image_units[:-1],image_units[1:]],dim=2) # 16, 3,2, 224, 224
-        # image_units = np.stack([image_units[:-1], image_units[1:]], axis=1) # 16, 2, 3, 260, 346
+        image_units=torch.stack(image_units) # 2, 3, 224, 224
+        image_units=torch.stack([image_units[:-1],image_units[1:]],dim=2) # 1, 3,2, 224, 224
+        # image_units = np.stack([image_units[:-1], image_units[1:]], axis=1) 
         
+        events=data_packet['events'] # (x,y,t,p)
         # convert events to event frame
-        eventframes=[]
-        for events in data_packet['events']:
-            events['polarity'][events['polarity']==0]=-1
-            events_positive=events[events['polarity']==1]
-            events_negative=events[events['polarity']==-1]
-            events_positive_frame=events_to_image_torch(events_positive['x'],events_positive['y'],events_positive['polarity'])
-            events_negative_frame=events_to_image_torch(events_negative['x'],events_negative['y'],events_negative['polarity'])
-            # abs negative channel
-            events_negative_frame=torch.abs(events_negative_frame)
-            events_sum_frame=events_positive_frame+events_negative_frame
-            
-            event_frame=torch.stack([events_positive_frame,events_negative_frame,events_sum_frame],dim=0)
-            # event_frame=resize_pad(event_frame)
-            eventframes.append(event_frame)
-        eventframes=torch.stack(eventframes)
+        events['polarity'][events['polarity']==0]=-1
+        events_positive=events[events['polarity']==1]
+        events_negative=events[events['polarity']==-1]
+        events_positive_frame=events_to_image_torch(events_positive['x'],events_positive['y'],events_positive['polarity'])
+        events_negative_frame=events_to_image_torch(events_negative['x'],events_negative['y'],events_negative['polarity'])
+        # abs negative channel
+        events_negative_frame=torch.abs(events_negative_frame)
+        events_sum_frame=events_positive_frame+events_negative_frame
         
-        return image_units,ModalityType.VISION, eventframes, ModalityType.EVENT
+        event_frame=torch.stack([events_positive_frame,events_negative_frame,events_sum_frame],dim=0)
+        # event_frame=resize_pad(event_frame)
+        event_frame=self.event_frame_normalize(event_frame)
+        
+        return image_units[0],ModalityType.VISION, event_frame, ModalityType.EVENT
         

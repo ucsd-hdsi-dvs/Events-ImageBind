@@ -34,4 +34,5 @@ if __name__ == '__main__':
         if file.endswith('.pkl'):
             print(f'Processing {count}/{length}', end='\r')
             chunk(os.path.join(data_dir, file))
+            count+=1
         
