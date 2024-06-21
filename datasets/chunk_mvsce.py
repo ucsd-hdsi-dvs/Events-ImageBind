@@ -28,7 +28,10 @@ def chunk(data_path):
 
 if __name__ == '__main__':
     # Iterate through the files in the directory
+    length=len(os.listdir(data_dir))
+    count=0
     for file in os.listdir(data_dir):
         if file.endswith('.pkl'):
+            print(f'Processing {count}/{length}', end='\r')
             chunk(os.path.join(data_dir, file))
         
