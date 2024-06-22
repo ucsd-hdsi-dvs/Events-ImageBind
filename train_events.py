@@ -58,7 +58,7 @@ class ImageBindTrain(L.LightningModule):
                  self_contrast=False, temperature=0.07,  momentum_betas=(0.9, 0.95), 
                  lora=False, lora_rank=4, lora_checkpoint_dir="./.checkpoints/lora",
                  lora_layer_idxs=None, lora_modality_names=None,
-                 linear_probing=False
+                 linear_probing=False, checkpoint_path=None
                  ):
         super().__init__()
         assert not (linear_probing and lora), \
@@ -73,6 +73,16 @@ class ImageBindTrain(L.LightningModule):
         # apply event layer
         eventmodel=EventModel()
         eventmodel.apply_event_layers(self.model)
+        
+        if checkpoint_path is not None:
+            checkpoint = torch.load(checkpoint_path)
+            modality_state_dict = {
+                k.replace('model.', ''): v for k, v in checkpoint['state_dict'].items()
+            }
+            model_state_dict = self.model.state_dict()
+            model_state_dict.update(modality_state_dict)
+            self.model.load_state_dict(model_state_dict)
+            
         
         for modality_preprocessor in self.model.modality_preprocessors.children():
                 modality_preprocessor.requires_grad_(False)
@@ -257,6 +267,8 @@ def parse_args():
 
     parser.add_argument("--linear_probing", action="store_true",
                         help="Freeze model and train the last layers of the head for each modality.")
+    parser.add_argument("--checkpoint_path", type=str, default=None,
+                        help="Path to checkpoint to load and continue training")
 
     return parser.parse_args()
 
@@ -409,5 +421,8 @@ if __name__ == "__main__":
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
                       logger=wandb_logger, strategy='ddp_find_unused_parameters_true', **checkpointing)
 
-    trainer.fit(model, train_loader, val_loader)
+    if args.checkpoint_path is None:
+        trainer.fit(model, train_loader, val_loader)
+    else:
+        trainer.fit(model, train_loader, ckpt_path=args.checkpoint_path)
 
