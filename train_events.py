@@ -424,5 +424,5 @@ if __name__ == "__main__":
     if args.checkpoint_path is None:
         trainer.fit(model, train_loader, val_loader)
     else:
-        trainer.fit(model, train_loader, ckpt_path=args.checkpoint_path)
+        trainer.fit(model, train_loader, val_loader, ckpt_path=args.checkpoint_path)
 
