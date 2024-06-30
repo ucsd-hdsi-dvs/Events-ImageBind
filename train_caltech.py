@@ -84,6 +84,8 @@ class CaltechTrain(L.LightningModule):
         return event_feats
     
     def calculate_loss(self, batch):
+        event_frames=batch['img']
+        texts=batch['prompt']
         
         
         

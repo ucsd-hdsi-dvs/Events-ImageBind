@@ -83,9 +83,8 @@ class NCaltech101(Dataset):
                 print(f'Rename {self.classes[i]} to {new_name}')
                 self.classes[i] = new_name
         
-        if prompt is not None:
-            self.prompt = prompt
-        else:
+        self.prompt = prompt
+        if self.prompt is None:
             self.prompt = 'a point cloud image of a {}'
 
     def _get_sample_idx(self):
