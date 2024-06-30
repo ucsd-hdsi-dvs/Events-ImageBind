@@ -39,6 +39,7 @@ class NCaltech101(Dataset):
         num_shots=None,
         repeat=True,
         new_cnames=None,
+        prompt=None
     ):
         root = get_real_path(root)
         self.root = root
@@ -81,6 +82,11 @@ class NCaltech101(Dataset):
                 new_name = new_cnames[self.classes[i]]
                 print(f'Rename {self.classes[i]} to {new_name}')
                 self.classes[i] = new_name
+        
+        if prompt is not None:
+            self.prompt = prompt
+        else:
+            self.prompt = 'a point cloud image of a {}'
 
     def _get_sample_idx(self):
         """Load event file_name and label pairs."""
@@ -168,6 +174,7 @@ class NCaltech101(Dataset):
         """
         f = str(self.labeled_files[idx])
         label = int(self.labels[idx])
+        class_name = self.classes[label]
         events = self._load_events(f)
         # the spatial resolution of N-Caltech events is 180x240
         # we should center the spatial coordinates of events
@@ -183,11 +190,14 @@ class NCaltech101(Dataset):
 
         # events: [N, 4 (x, y, t, p)], label: int
         # N is usually 1e5 ~ 1e6
+        # format prompt
+        prompt = self.prompt.format(class_name)
         return {
             'events': events,
             # 't': events[:, 2],
             'label': label,
             'data_idx': idx,
+            'prompt': prompt,
         }
 
 
@@ -223,3 +233,4 @@ def build_n_caltech_dataset(params, val_only=False, gen_data=False):
         new_cnames=NEW_CNAMES,
     )
     return train_set, val_set
+

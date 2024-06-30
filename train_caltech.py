@@ -37,6 +37,7 @@ from models import lora as LoRA
 from models.imagebind_model import ModalityType, load_module, save_module
 from models.events import EventModel
 from train_events import ImageBindTrain
+from datasets.eclipdatasets.simple_tokenizer import tokenize
 
 logging.basicConfig(level=logging.INFO, force=True)
 
@@ -72,7 +73,7 @@ class CaltechTrain(L.LightningModule):
     
     def get_text_feats(self, text):
         with torch.no_grad():
-            text_feats = self.model({ModalityType.TEXT: text})
+            text_feats = self.model({ModalityType.TEXT: tokenize(text)})
         text_feats=list(text_feats.values())[0]
         return text_feats
     
@@ -83,6 +84,6 @@ class CaltechTrain(L.LightningModule):
         return event_feats
     
     def calculate_loss(self, batch):
-        pass
+        
         
         
