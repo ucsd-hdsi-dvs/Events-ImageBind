@@ -3,3 +3,4 @@
 .DS_Store
 wandb/
 .checkpoints/imagebind_huge.pth
+.checkpoints/imgbind_fintuned.pth
