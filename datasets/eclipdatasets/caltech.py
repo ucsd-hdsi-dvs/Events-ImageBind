@@ -49,6 +49,10 @@ class NCaltech101(Dataset):
         if self.is_pseudo:
             print('Using pseudo labeled dataset!')
 
+        self.prompt = prompt
+        if self.prompt is None:
+            self.prompt = 'a point cloud image of a {}'
+        
         # data stats (computed from the test set)
         self.resolution = (180, 240)
         # t is very uniform, i.e. different samples have similar max_t
@@ -83,9 +87,6 @@ class NCaltech101(Dataset):
                 print(f'Rename {self.classes[i]} to {new_name}')
                 self.classes[i] = new_name
         
-        self.prompt = prompt
-        if self.prompt is None:
-            self.prompt = 'a point cloud image of a {}'
 
     def _get_sample_idx(self):
         """Load event file_name and label pairs."""
@@ -232,4 +233,6 @@ def build_n_caltech_dataset(params, val_only=False, gen_data=False):
         new_cnames=NEW_CNAMES,
     )
     return train_set, val_set
+
+
 

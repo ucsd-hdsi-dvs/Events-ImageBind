@@ -137,11 +137,11 @@ class Event2ImageDataset(Dataset):
         if self.keep_events:
             data_dict['events'] = copy.deepcopy(events)
 
-        imgs, valid_mask = self._event2img(events)
+        imgs, valid_mask= self._event2img(events)
 
         data_dict['img'] = imgs
         data_dict['valid_mask'] = valid_mask
-
+        
         return data_dict
 
 
