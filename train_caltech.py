@@ -41,6 +41,8 @@ from datasets.eclipdatasets.simple_tokenizer import tokenize
 from datasets.eclipdatasets.event2img import Event2ImageDataset
 from models.imagebind_model import imagebind_huge
 from models.events import EventModel
+import copy
+from models.adapter import IdentityAdapter, TransformerAdapter
 
 logging.basicConfig(level=logging.INFO, force=True)
 
@@ -86,45 +88,75 @@ def resize_pad(frame, size=224):
 
     return frame
 
-def load_model_from_checkpoint(checkpoint_path='/tsukimi/datasets/Chiba/finetune_checkpoint/checkpoints/imagebind-epoch=20-val_loss=0.00.ckpt',device=None):
+def load_model_from_checkpoint(checkpoint_path='/tsukimi/datasets/Chiba/finetune_checkpoint/checkpoints/imgbind_fintuned.pth',device=None):
     """
     Load a model from a checkpoint.
     """
-    # imgtrain=ImageBindTrain.load_from_checkpoint(checkpoint_path,map_location=torch.device('cpu'))
-    # model = imgtrain.model.to(device)
-    # return model
     model=imagebind_huge(pretrained=True)
-    # checkpoint = torch.load(checkpoint_path)
     eventmodel=EventModel()
     eventmodel.apply_event_layers(model)
-    # modality_state_dict = {
-    #             k.replace('model.', ''): v for k, v in checkpoint['state_dict'].items()
-    #         }  
-    # model_state_dict = model.state_dict()
-    # model_state_dict.update(modality_state_dict)
-    # model.load_state_dict(model_state_dict)
+    # load the state dict
+    model.load_state_dict(torch.load(checkpoint_path))
     return model
     
 
 class CaltechTrain(L.LightningModule):
     def __init__(self, lr=5e-4, weight_decay=1e-4, max_epochs=500, batch_size=32, num_workers=4, seed=42, 
-                 self_contrast=False, temperature=0.07,  momentum_betas=(0.9, 0.95), checkpoint_path=None,class_names=None, prompt='a point cloud image of a {}'
+                 self_contrast=False, temperature=0.07,  momentum_betas=(0.9, 0.95), checkpoint_path=None,class_names=None, prompt='a point cloud image of a {}',
+                 adapter_dict=dict(
+                # 'trans', 'identity'
+                # 'text-{}' with the above: tune text features as FC weight
+                adapter_type='trans',
+                residual=True,
+                in_dim=1024,
+            )
                  ):
         super().__init__()
         self.save_hyperparameters()
         
         self.model=load_model_from_checkpoint(checkpoint_path)
-        # self.model.eval()
+        self.model.eval()
         
-        for modality_preprocessor in self.model.modality_preprocessors.children():
-            modality_preprocessor.requires_grad_(False)
-        for modality_trunk in self.model.modality_trunks.children():
-            modality_trunk.requires_grad_(False)
+        # for modality_preprocessor in self.model.modality_preprocessors.children():
+        #     modality_preprocessor.requires_grad_(False)
+        # for modality_trunk in self.model.modality_trunks.children():
+        #     modality_trunk.requires_grad_(False)
         
         self.class_names=class_names
         self.prompt=prompt
-        self.text_feats_final=None
+        self.text_feats=None
         self.agg_func='mean'
+        self.adapter_dict = copy.deepcopy(adapter_dict)
+        
+        self._build_adapter()
+    
+    def _build_prompts(self, adapter_type):
+        """Build the text features for prompt tuning."""
+        with torch.no_grad():
+            text_feats = self.get_text_feats().float()  # [n_classes, C]
+        self.text_feats =torch.nn.Parameter(text_feats, requires_grad=True)
+        adapter_type = adapter_type[5:]
+        return adapter_type
+    
+    def _build_adapter(self):
+        # whether to tune the text features as well
+        adapter_type = self.adapter_dict.pop('adapter_type').lower()
+        if adapter_type.startswith('text-'):
+            print('Tune text features as well!')
+            self.prompt_tuning = True
+            adapter_type = self._build_prompts(adapter_type)
+        else:
+            self.prompt_tuning = False
+
+        # image feature adapter
+        self.adapter_type = adapter_type
+        if adapter_type == 'identity':  # not tuning image features
+            model = IdentityAdapter
+        elif adapter_type == 'trans':  # Transformer to fuse image features
+            model = TransformerAdapter
+        else:
+            raise NotImplementedError(f'adapter {adapter_type} not supported!')
+        self.adapter = model(**self.adapter_dict)
     
     def _same_class_names(self, class_names):
         """Check if the input `class_names` matches `self.class_names`."""
@@ -139,28 +171,27 @@ class CaltechTrain(L.LightningModule):
         return [optimizer], [lr_scheduler]
     
     def get_text_feats(self):
-        if self.text_feats_final is not None:
-            return self.text_feats_final
+        if self.text_feats is not None:
+            return self.text_feats
         
         class_names = [c.lower().replace('_', ' ') for c in self.class_names]
         prompts=torch.cat([tokenize(self.prompt.format(c)) for c in class_names]).to(self.device)
         
         result=[]
         for text in prompts:
-            # with torch.no_grad():
-            text_feats = self.model({ModalityType.TEXT: text.unsqueeze(0)})
+            with torch.no_grad():
+                text_feats = self.model({ModalityType.TEXT: text.unsqueeze(0)})
             text_feats=list(text_feats.values())[0]
             result.append(text_feats)
         result=torch.cat(result,dim=0)
-        self.text_feats_final=result
         return result
     
     def get_event_feats(self, imgs):
         result=[]
         for i in range(len(imgs)):
             events=imgs[i]
-            # with torch.no_grad():
-            event_feats = self.model({ModalityType.EVENT: events.unsqueeze(0)})
+            with torch.no_grad():
+                event_feats = self.model({ModalityType.EVENT: events.unsqueeze(0)})
             event_feats=list(event_feats.values())[0]
             result.append(event_feats)
         return torch.cat(result,dim=0)
@@ -202,11 +233,23 @@ class CaltechTrain(L.LightningModule):
         img_feats=self.get_event_feats(valid_imgs) # [N, C]
         text_feats=self.get_text_feats()    # [n_classes, C]
         
-        n_cls = text_feats.shape[0]
-        logits = (img_feats @ text_feats.T)  # [N, n_cls]
+        # update image features using adapter
+        C = img_feats.shape[-1]
+        full_img_feats = torch.zeros(B, T, C).type_as(img_feats)
+        full_img_feats[valid_masks] = img_feats
+        full_img_feats = self.adapter(full_img_feats, valid_masks)
+        full_img_feats = F.normalize(
+            full_img_feats, p=2, dim=-1).type_as(full_img_feats)
+        full_img_feats = full_img_feats * valid_masks.float().unsqueeze(-1)
         
-        full_logits = torch.zeros(B, T, n_cls).type_as(logits)
-        full_logits[valid_masks] = logits
+        n_cls = text_feats.shape[0]
+        full_logits = (full_img_feats @ text_feats.T)  # [N, n_cls]
+        
+        # print("full_img_feats",full_img_feats.shape)
+        # print("full_logits",full_logits.shape)
+        
+        # full_logits = torch.zeros(B, T, n_cls).type_as(logits)
+        # full_logits[valid_masks] = logits
         logits = self._aggregate_logits(full_logits, valid_masks)
         probs = self._aggregate_probs(full_logits, valid_masks)
         
