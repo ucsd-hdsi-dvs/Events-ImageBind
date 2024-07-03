@@ -39,6 +39,8 @@ from models.events import EventModel
 from train_events import ImageBindTrain
 from datasets.eclipdatasets.simple_tokenizer import tokenize
 from datasets.eclipdatasets.event2img import Event2ImageDataset
+from models.imagebind_model import imagebind_huge
+from models.events import EventModel
 
 logging.basicConfig(level=logging.INFO, force=True)
 
@@ -88,9 +90,21 @@ def load_model_from_checkpoint(checkpoint_path='/tsukimi/datasets/Chiba/finetune
     """
     Load a model from a checkpoint.
     """
-    imgtrain=ImageBindTrain.load_from_checkpoint(checkpoint_path,map_location=torch.device('cpu'))
-    model = imgtrain.model.to(device)
+    # imgtrain=ImageBindTrain.load_from_checkpoint(checkpoint_path,map_location=torch.device('cpu'))
+    # model = imgtrain.model.to(device)
+    # return model
+    model=imagebind_huge(pretrained=True)
+    checkpoint = torch.load(checkpoint_path)
+    eventmodel=EventModel()
+    eventmodel.apply_event_layers(model)
+    modality_state_dict = {
+                k.replace('model.', ''): v for k, v in checkpoint['state_dict'].items()
+            }  
+    model_state_dict = model.state_dict()
+    model_state_dict.update(modality_state_dict)
+    model.load_state_dict(model_state_dict)
     return model
+    
 
 class CaltechTrain(L.LightningModule):
     def __init__(self, lr=5e-4, weight_decay=1e-4, max_epochs=500, batch_size=32, num_workers=4, seed=42, 
@@ -99,7 +113,7 @@ class CaltechTrain(L.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         
-        self.model=load_model_from_checkpoint(checkpoint_path,device=self.device)
+        self.model=load_model_from_checkpoint(checkpoint_path)
         self.model.eval()
         self.class_names=class_names
         self.prompt=prompt
@@ -258,6 +272,7 @@ def parse_args():
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
     parser.add_argument("--momentum_betas", nargs=2, type=float, default=[0.9, 0.95],
                         help="Momentum beta 1 and 2 for Adam optimizer")
+    parser.add_argument("--gradient_clip_val", type=float, default=1.0, help="Gradient clipping value")
     parser.add_argument("--temperature", type=float, default=0.07, help="Temperature parameter for InfoNCE loss")
     parser.add_argument('--N', type=int, default=2000)
     parser.add_argument("--num_workers", type=int, default=0, help="Number of workers for data loading")
@@ -305,12 +320,19 @@ if __name__ == "__main__":
                            weight_decay=args.weight_decay, momentum_betas=args.momentum_betas,
                            temperature=args.temperature,class_names=class_names,checkpoint_path='/tsukimi/datasets/Chiba/finetune_checkpoint/checkpoints/imagebind-epoch=20-val_loss=0.00.ckpt')
     checkpointing = {"enable_checkpointing": True,
-                         "callbacks": [ModelCheckpoint(monitor="val_acc", dirpath=args.full_model_checkpoint_dir,
+                         "callbacks": [ModelCheckpoint(monitor="val_acc", dirpath="/tsukimi/datasets/Chiba/finetune_checkpoint/caltech",
                                                         filename="imagebind-{epoch:02d}-{val_loss:.2f}",
                                                         save_last=True, mode="min")]}
     
+    trainer=Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
+                      devices=1 if ":" not in device_name else int(device_name.split(":")[1]), deterministic=True,
+                      max_epochs=args.max_epochs,gradient_clip_val=args.gradient_clip_val,
+                      logger=wandb_logger, **checkpointing)
+    trainer.fit(model, train_loader, val_loader)
     
     
+
+# python train_caltech.py 
 
 
     
