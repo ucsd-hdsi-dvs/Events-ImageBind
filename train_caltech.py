@@ -94,15 +94,15 @@ def load_model_from_checkpoint(checkpoint_path='/tsukimi/datasets/Chiba/finetune
     # model = imgtrain.model.to(device)
     # return model
     model=imagebind_huge(pretrained=True)
-    checkpoint = torch.load(checkpoint_path)
+    # checkpoint = torch.load(checkpoint_path)
     eventmodel=EventModel()
     eventmodel.apply_event_layers(model)
-    modality_state_dict = {
-                k.replace('model.', ''): v for k, v in checkpoint['state_dict'].items()
-            }  
-    model_state_dict = model.state_dict()
-    model_state_dict.update(modality_state_dict)
-    model.load_state_dict(model_state_dict)
+    # modality_state_dict = {
+    #             k.replace('model.', ''): v for k, v in checkpoint['state_dict'].items()
+    #         }  
+    # model_state_dict = model.state_dict()
+    # model_state_dict.update(modality_state_dict)
+    # model.load_state_dict(model_state_dict)
     return model
     
 
@@ -114,10 +114,17 @@ class CaltechTrain(L.LightningModule):
         self.save_hyperparameters()
         
         self.model=load_model_from_checkpoint(checkpoint_path)
-        self.model.eval()
+        # self.model.eval()
+        
+        for modality_preprocessor in self.model.modality_preprocessors.children():
+            modality_preprocessor.requires_grad_(False)
+        for modality_trunk in self.model.modality_trunks.children():
+            modality_trunk.requires_grad_(False)
+        
         self.class_names=class_names
         self.prompt=prompt
         self.text_feats_final=None
+        self.agg_func='mean'
     
     def _same_class_names(self, class_names):
         """Check if the input `class_names` matches `self.class_names`."""
@@ -135,13 +142,13 @@ class CaltechTrain(L.LightningModule):
         if self.text_feats_final is not None:
             return self.text_feats_final
         
-        class_names = [c.lower().replace('_', ' ') for c in class_names]
+        class_names = [c.lower().replace('_', ' ') for c in self.class_names]
         prompts=torch.cat([tokenize(self.prompt.format(c)) for c in class_names]).to(self.device)
         
         result=[]
         for text in prompts:
-            with torch.no_grad():
-                text_feats = self.model({ModalityType.TEXT: text.unsqueeze(0)})
+            # with torch.no_grad():
+            text_feats = self.model({ModalityType.TEXT: text.unsqueeze(0)})
             text_feats=list(text_feats.values())[0]
             result.append(text_feats)
         result=torch.cat(result,dim=0)
@@ -152,8 +159,8 @@ class CaltechTrain(L.LightningModule):
         result=[]
         for i in range(len(imgs)):
             events=imgs[i]
-            with torch.no_grad():
-                event_feats = self.model({ModalityType.EVENT: events.unsqueeze(0)})
+            # with torch.no_grad():
+            event_feats = self.model({ModalityType.EVENT: events.unsqueeze(0)})
             event_feats=list(event_feats.values())[0]
             result.append(event_feats)
         return torch.cat(result,dim=0)
@@ -221,8 +228,8 @@ class CaltechTrain(L.LightningModule):
         loss_dict['ce_loss'] = F.cross_entropy(logits, labels)
         loss_dict['probs_acc'] = probs_acc
         
-        self.log("train_loss", loss_dict['ce_loss'], on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
-        self.log("train_acc", probs_acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
+        self.log("train_loss", loss_dict['ce_loss'], on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,sync_dist=True)
+        self.log("train_acc", probs_acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,sync_dist=True)
         return loss_dict
     
     def calc_eval_loss(self, data_dict, out_dict):
@@ -240,8 +247,8 @@ class CaltechTrain(L.LightningModule):
         logits_acc = (logits.argmax(dim=-1) == labels).float().mean()
         loss_dict['logits_acc'] = logits_acc
         
-        self.log("val_loss", loss_dict['ce_loss'], on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
-        self.log("val_acc", probs_acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True)
+        self.log("val_loss", loss_dict['ce_loss'], on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,sync_dist=True)
+        self.log("val_acc", probs_acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,sync_dist=True)
         return loss_dict
     
     def training_step(self, batch, batch_idx):
@@ -327,7 +334,7 @@ if __name__ == "__main__":
     trainer=Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
                       devices=1 if ":" not in device_name else int(device_name.split(":")[1]), deterministic=True,
                       max_epochs=args.max_epochs,gradient_clip_val=args.gradient_clip_val,
-                      logger=wandb_logger, **checkpointing)
+                      logger=wandb_logger, **checkpointing,strategy="ddp_find_unused_parameters_true")
     trainer.fit(model, train_loader, val_loader)
     
     
