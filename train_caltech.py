@@ -99,6 +99,11 @@ def load_model_from_checkpoint(checkpoint_path='/tsukimi/datasets/Chiba/finetune
     model.load_state_dict(torch.load(checkpoint_path))
     return model
     
+def load_model_from_origin():
+    model=imagebind_huge(pretrained=True)
+    eventmodel=EventModel()
+    eventmodel.apply_event_layers(model)
+    return model
 
 class CaltechTrain(L.LightningModule):
     def __init__(self, lr=5e-4, weight_decay=1e-4, max_epochs=500, batch_size=32, num_workers=4, seed=42, 
@@ -114,7 +119,8 @@ class CaltechTrain(L.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         
-        self.model=load_model_from_checkpoint(checkpoint_path)
+        # self.model=load_model_from_checkpoint(checkpoint_path)
+        self.model=load_model_from_origin()
         self.model.eval()
         
         # for modality_preprocessor in self.model.modality_preprocessors.children():
@@ -132,8 +138,8 @@ class CaltechTrain(L.LightningModule):
     
     def _build_prompts(self, adapter_type):
         """Build the text features for prompt tuning."""
-        with torch.no_grad():
-            text_feats = self.get_text_feats().float()  # [n_classes, C]
+        # with torch.no_grad():
+        text_feats = self.get_text_feats().float()  # [n_classes, C]
         self.text_feats =torch.nn.Parameter(text_feats, requires_grad=True)
         adapter_type = adapter_type[5:]
         return adapter_type
@@ -180,10 +186,11 @@ class CaltechTrain(L.LightningModule):
         result=[]
         for text in prompts:
             with torch.no_grad():
-                text_feats = self.model({ModalityType.TEXT: text.unsqueeze(0)})
-            text_feats=list(text_feats.values())[0]
-            result.append(text_feats)
+                text_feat = self.model({ModalityType.TEXT: text.unsqueeze(0)})
+            text_feat=list(text_feat.values())[0]
+            result.append(text_feat)
         result=torch.cat(result,dim=0)
+        # print("text_feats",result.shape)
         return result
     
     def get_event_feats(self, imgs):
@@ -194,7 +201,9 @@ class CaltechTrain(L.LightningModule):
                 event_feats = self.model({ModalityType.EVENT: events.unsqueeze(0)})
             event_feats=list(event_feats.values())[0]
             result.append(event_feats)
-        return torch.cat(result,dim=0)
+        result=torch.cat(result,dim=0)
+        # print("event_feats",result.shape)
+        return result
     
     def _aggregate_logits(self, logits, valid_masks):
         """Aggregate logits for each data.
@@ -222,6 +231,29 @@ class CaltechTrain(L.LightningModule):
         probs = probs * valid_masks[..., None]
         probs = probs.sum(1) / valid_masks.sum(1, keepdim=True)
         return probs
+    
+    def forward_origin(self,data_dict):
+        imgs=data_dict['img'] # [B, T, C, H, W]
+        valid_masks = data_dict['valid_mask'] # [B, T]
+        B, T = valid_masks.shape
+        
+        valid_imgs = imgs[valid_masks]  # [N, C, H, W]
+        img_feats=self.get_event_feats(valid_imgs)
+        text_feats=self.get_text_feats()   
+        
+        n_cls = text_feats.shape[0]
+        logits = (img_feats @ text_feats.T)  # [N, n_cls]
+        full_logits = torch.zeros(B, T, n_cls).type_as(logits)
+        full_logits[valid_masks] = logits
+        logits = self._aggregate_logits(full_logits, valid_masks)
+        probs = self._aggregate_probs(full_logits, valid_masks)
+        out_dict = {
+            'full_logits': full_logits,  # [B, T, n_classes]
+            'valid_masks': valid_masks,  # [B, T]
+            'logits': logits,  # [B, n_classes]
+            'probs': probs,  # [B, n_classes]
+        }
+        return out_dict
     
     def forward(self, data_dict):
         imgs=data_dict['img'] # [B, T, C, H, W]
@@ -277,21 +309,22 @@ class CaltechTrain(L.LightningModule):
     
     def calc_eval_loss(self, data_dict, out_dict):
         """Loss computation in eval."""
-        loss_dict = self.calc_train_loss(data_dict, out_dict)
-
-        # also compute the cls accuracy
-        labels = data_dict['label']  # [B]
-        # based on aggregated probs
+        labels = data_dict['label'] # [B]
+        logits = out_dict['logits']  # [B, n_classes]
         probs = out_dict['probs']  # [B, n_classes]
         probs_acc = (probs.argmax(dim=-1) == labels).float().mean()
+        
+        loss_dict = {}
+        loss_dict['ce_loss'] = F.cross_entropy(logits, labels)
         loss_dict['probs_acc'] = probs_acc
+
         # based on aggregated logits
-        logits = out_dict['logits']  # [B, n_classes]
         logits_acc = (logits.argmax(dim=-1) == labels).float().mean()
         loss_dict['logits_acc'] = logits_acc
         
         self.log("val_loss", loss_dict['ce_loss'], on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,sync_dist=True)
         self.log("val_acc", probs_acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,sync_dist=True)
+        self.log("val_logits_acc", logits_acc, on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH,prog_bar=True,sync_dist=True)
         return loss_dict
     
     def training_step(self, batch, batch_idx):
@@ -324,7 +357,10 @@ def parse_args():
                         help="Momentum beta 1 and 2 for Adam optimizer")
     parser.add_argument("--gradient_clip_val", type=float, default=1.0, help="Gradient clipping value")
     parser.add_argument("--temperature", type=float, default=0.07, help="Temperature parameter for InfoNCE loss")
+    
     parser.add_argument('--N', type=int, default=2000)
+    parser.add_argument('--num_shots', type=int, default=None)
+    
     parser.add_argument("--num_workers", type=int, default=0, help="Number of workers for data loading")
     parser.add_argument("--checkpoint_path", type=str, default=None,
                         help="Path to checkpoint to load and continue training")
@@ -351,16 +387,17 @@ if __name__ == "__main__":
             grayscale=False,
             count_non_zero=False,  # hotpixel statistics
             background_mask=True,  # apply white background via alpha-masking
+            shape=(224, 224),
         )
     
     if args.datasets=="caltech":
         from datasets.eclipdatasets.caltech import NCaltech101,NEW_CNAMES
         
-        train_dataset=NCaltech101(os.path.join(args.datasets_dir,'training'), augmentation=True, new_cnames=NEW_CNAMES)
+        train_dataset=NCaltech101(os.path.join(args.datasets_dir,'training'), augmentation=True, new_cnames=NEW_CNAMES,num_shots=args.num_shots)
         class_names=train_dataset.classes
         train_dataset=Event2ImageDataset(transforms=data_transform, event_dataset=train_dataset,quantize_args=quantize_args,augment=False,tta=False)
         
-        val_dataset=NCaltech101(os.path.join(args.datasets_dir,'testing'), augmentation=False, new_cnames=NEW_CNAMES)
+        val_dataset=NCaltech101(os.path.join(args.datasets_dir,'testing'), augmentation=False, new_cnames=NEW_CNAMES,num_shots=args.num_shots)
         val_dataset=Event2ImageDataset(transforms=data_transform, event_dataset=val_dataset,quantize_args=quantize_args,augment=False,tta=False)
     
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
