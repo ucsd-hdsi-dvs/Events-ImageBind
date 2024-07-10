@@ -7,14 +7,14 @@ checkpoint_path='/tsukimi/datasets/Chiba/finetune_checkpoint/checkpoints/imagebi
 
 python train_events.py --full_model_checkpoint_dir ${check_dir} \
     --full_model_checkpointing \
-    --device cuda:4 \
+    --device cuda \
     --datasets_dir ${data_dir} \
     --loggers wandb \
     --loggers_dir ${log_dir} \
     --max_epochs 100 \
     --headless \
     --num_workers 4 \
-    --batch_size 8 \
+    --batch_size 16 \
     # --checkpoint_path ${checkpoint_path} \
 
 
