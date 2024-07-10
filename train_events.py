@@ -88,6 +88,9 @@ class ImageBindTrain(L.LightningModule):
                 modality_preprocessor.requires_grad_(False)
         # for modality_trunk in self.model.modality_trunks.children():
         #     modality_trunk.requires_grad_(False)
+        # freeze vision channels
+        for params in self.model.modality_trunks[ModalityType.VISION].parameters():
+            params.requires_grad = False
         
         if lora:
             for modality_preprocessor in self.model.modality_preprocessors.children():
@@ -174,7 +177,7 @@ class ImageBindTrain(L.LightningModule):
                 dual_nll /= 2
             # Logging loss
             self.log(mode + "_loss_" + contrast[feats_idx], nll, prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size, sync_dist=True)
             # Get ranking position of positive example
             comb_sim = torch.cat(
                 [cos_sim[pos_mask][:, None], cos_sim.masked_fill(pos_mask, -9e15)],  # First position positive example
@@ -183,14 +186,14 @@ class ImageBindTrain(L.LightningModule):
             sim_argsort = comb_sim.argsort(dim=-1, descending=True).argmin(dim=-1)
             # Logging ranking metrics
             self.log(mode + "_acc_top1", (sim_argsort == 0).float().mean(), prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size, sync_dist=True)
             self.log(mode + "_acc_top5", (sim_argsort < 5).float().mean(), prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size, sync_dist=True)
             self.log(mode + "_acc_mean_pos", 1 + sim_argsort.float().mean(), prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size, sync_dist=True)
 
         self.log(mode + "_loss", dual_nll, prog_bar=True,
-                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size, sync_dist=True)
         return dual_nll
 
     def training_step(self, batch, batch_idx):
