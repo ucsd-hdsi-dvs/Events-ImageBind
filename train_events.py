@@ -91,6 +91,10 @@ class ImageBindTrain(L.LightningModule):
         # freeze vision channels
         for params in self.model.modality_trunks[ModalityType.VISION].parameters():
             params.requires_grad_(False)
+        for params in self.model.modality_postprocessors[ModalityType.VISION].parameters():
+            params.requires_grad_(False)
+        for params in self.model.modality_heads[ModalityType.VISION].parameters():
+            params.requires_grad_(False)
         
         if lora:
             for modality_preprocessor in self.model.modality_preprocessors.children():
@@ -141,8 +145,8 @@ class ImageBindTrain(L.LightningModule):
         # class_a is always "vision" according to ImageBind
         # feats_a = [self.model({class_a[0]: data_a_i.unsqueeze(0)}) for data_a_i in data_a]
         # feats_a_tensor = torch.cat([list(dict_.values())[0] for dict_ in feats_a], dim=0)
-
-        feats_a_tensor=list(self.model({class_a[0]: data_a}).values())[0]
+        with torch.no_grad():
+            feats_a_tensor=list(self.model({class_a[0]: data_a}).values())[0]
 
         # class_b could be any modality
         # feats_b = [self.model({class_b[idx]: data_b_i.unsqueeze(0)}) for idx, data_b_i in enumerate(data_b)]
