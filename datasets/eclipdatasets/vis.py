@@ -76,7 +76,7 @@ def events2frames(
         events,  # [N, 4 (x,y,t,p)]
         split_method ='event_count',  # 'event_count'
         convert_method = 'event_histogram',  # 'event_histogram'
-        shape=(224, 224),
+        shape=(180, 240),
         **kwargs,
 ):
     """Convert events to 2D frames."""
