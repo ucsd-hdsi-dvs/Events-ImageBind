@@ -54,7 +54,7 @@ class NCaltech101(Dataset):
             self.prompt = 'a point cloud image of a {}'
         
         # data stats (computed from the test set)
-        self.resolution = (224, 224)
+        self.resolution = (180, 240)
         # t is very uniform, i.e. different samples have similar max_t
         # so just take the max (unit: second)
         self.max_t = 0.325

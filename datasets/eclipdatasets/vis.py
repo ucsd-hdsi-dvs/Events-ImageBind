@@ -1,6 +1,7 @@
 import copy
 
 import numpy as np
+import torch
 
 
 def make_event_histogram(x, y, p, red, blue, shape, thresh=10., **kwargs):
@@ -71,6 +72,69 @@ def split_event_count(t, N=30000):
 
     return idx0, idx1, t0, t1
 
+def event_frame(xs,ys,ps,sensor_size=(260,346)):
+    x_positive=xs[ps==1]
+    y_positive=ys[ps==1]
+    p_positive=ps[ps==1]
+
+    x_negative=xs[ps==-1]
+    y_negative=ys[ps==-1]
+    p_negative=ps[ps==-1]
+
+    events_positive_frame=events_to_image_torch(x_positive,y_positive,p_positive,sensor_size=sensor_size)
+    events_negative_frame=events_to_image_torch(x_negative,y_negative,p_negative,sensor_size=sensor_size)
+    events_negative_frame=torch.abs(events_negative_frame)
+    events_sum_frame=events_positive_frame+events_negative_frame
+    event_frame=torch.stack([events_positive_frame,events_negative_frame,events_sum_frame],dim=0)
+    return event_frame
+
+def events_to_image_torch(xs, ys, ps,
+        device=None, sensor_size=(260, 346), clip_out_of_range=False,
+        interpolation=None, padding=True, default=0):
+    """
+    Method to turn event tensor to image. Allows for bilinear interpolation.
+    @param xs Tensor of x coords of events
+    @param ys Tensor of y coords of events
+    @param ps Tensor of event polarities/weights
+    @param device The device on which the image is. If none, set to events device
+    @param sensor_size The size of the image sensor/output image
+    @param clip_out_of_range If the events go beyond the desired image size,
+       clip the events to fit into the image
+    @param interpolation Which interpolation to use. Options=None,'bilinear'
+    @param padding If bilinear interpolation, allow padding the image by 1 to allow events to fit:
+    @returns Event image from the events
+    """
+    xs=torch.tensor(xs.copy(), dtype=torch.long)
+    ys = torch.tensor(ys.copy(), dtype=torch.long)
+    ps = torch.tensor(ps.copy(),dtype=torch.float32)
+    
+    if device is None:
+        device = xs.device
+    img_size = list(sensor_size)
+
+    mask = torch.ones(xs.size(), device=device)
+    if clip_out_of_range:
+        zero_v = torch.tensor([0.], device=device)
+        ones_v = torch.tensor([1.], device=device)
+        clipx = img_size[1] if interpolation is None and padding==False else img_size[1]-1
+        clipy = img_size[0] if interpolation is None and padding==False else img_size[0]-1
+        mask = torch.where(xs>=clipx, zero_v, ones_v)*torch.where(ys>=clipy, zero_v, ones_v)
+
+    img = (torch.ones(img_size)*default).to(device)
+    if xs.dtype is not torch.long:
+        xs = xs.long().to(device)
+    if ys.dtype is not torch.long:
+        ys = ys.long().to(device)
+    try:
+        mask = mask.long().to(device)
+        xs, ys = xs*mask, ys*mask
+        img.index_put_((ys, xs), ps, accumulate=True)
+    except Exception as e:
+        print("Unable to put tensor {} positions ({}, {}) into {}. Range = {},{}".format(
+            ps.shape, ys.shape, xs.shape, img.shape,  torch.max(ys), torch.max(xs)))
+        raise e
+    return img
+
 
 def events2frames(
         events,  # [N, 4 (x,y,t,p)]
@@ -107,8 +171,8 @@ def events2frames(
     for t_idx, (i0, i1) in enumerate(zip(idx0, idx1)):
         xx, yy, pp, tt = x[i0:i1], y[i0:i1], p[i0:i1], t[i0:i1]
         if convert_method == 'event_histogram':
-            frame = make_event_histogram(xx, yy, pp, red, blue, shape,
-                                         **kwargs)
+            frame = event_frame(xx, yy, pp, sensor_size=shape)
+            frame=frame.permute(1,2,0)
         else:
             raise NotImplementedError(f'{convert_method} not implemented!')
         frames.append(copy.deepcopy(frame))

@@ -119,7 +119,7 @@ class CaltechTrain(L.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         
-        self.model=load_model_from_checkpoint(checkpoint_path)
+        self.model=load_model_from_checkpoint()
         # self.model=load_model_from_origin()
         self.model.eval()
         
@@ -378,7 +378,9 @@ if __name__ == "__main__":
     
     data_transform=frame_normalize = transforms.Compose([
                 transforms.ToTensor(),
-                resize_pad])
+                resize_pad,
+                transforms.Normalize([0.127, 0.143, 0.267], [0.581, 0.610, 1.05])])
+    
     quantize_args=dict(
             max_imgs=2,
             split_method='event_count',
@@ -405,7 +407,7 @@ if __name__ == "__main__":
     
     model=CaltechTrain(max_epochs=args.max_epochs, batch_size=args.batch_size, lr=args.lr,
                            weight_decay=args.weight_decay, momentum_betas=args.momentum_betas,
-                           temperature=args.temperature,class_names=class_names,checkpoint_path='/tsukimi/datasets/Chiba/finetune_checkpoint/checkpoints/imgbind_fintuned.pth')
+                           temperature=args.temperature,class_names=class_names)
     checkpointing = {"enable_checkpointing": True,
                          "callbacks": [ModelCheckpoint(monitor="val_acc", dirpath="/tsukimi/datasets/Chiba/finetune_checkpoint/caltech",
                                                         filename="imagebind-{epoch:02d}-{val_loss:.2f}",

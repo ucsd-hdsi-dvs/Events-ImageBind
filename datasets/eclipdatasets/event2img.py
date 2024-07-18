@@ -10,7 +10,6 @@ from .augment import RandAugment, InterpolationMode
 from .utils import random_time_flip_events as tflip_events
 from .utils import random_flip_events_along_x as hflip_events
 
-
 class Event2ImageDataset(Dataset):
     """A wrapper for EventDataset that converts events to 2D images."""
 
@@ -116,9 +115,9 @@ class Event2ImageDataset(Dataset):
         # events: [N, 4 (x, y, t, p)]
         # get [N, H, W, 3] images with dtype np.uint8
         imgs = events2frames(events, **self.quantize_args)
-        imgs = [Image.fromarray(img) for img in imgs]
-        if self.augment:
-            imgs = self.augmentation(imgs)
+        # imgs = [Image.fromarray(img) for img in imgs]
+        # if self.augment:
+        #     imgs = self.augmentation(imgs)
         imgs = torch.stack([self.transforms(img) for img in imgs])
         # to [N, 3, H, W] torch.Tensor as model inputs
 
