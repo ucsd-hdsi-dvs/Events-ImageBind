@@ -378,7 +378,8 @@ if __name__ == "__main__":
     
     data_transform=frame_normalize = transforms.Compose([
                 transforms.ToTensor(),
-                resize_pad])
+                resize_pad,
+                transforms.Normalize([0.127, 0.143, 0.267], [0.581, 0.610, 1.05])])
     
     quantize_args=dict(
             max_imgs=2,

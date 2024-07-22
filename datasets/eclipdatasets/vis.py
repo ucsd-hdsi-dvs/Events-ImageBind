@@ -171,8 +171,8 @@ def events2frames(
     for t_idx, (i0, i1) in enumerate(zip(idx0, idx1)):
         xx, yy, pp, tt = x[i0:i1], y[i0:i1], p[i0:i1], t[i0:i1]
         if convert_method == 'event_histogram':
-            frame = make_event_histogram(xx, yy, pp, red, blue, shape,
-                                         **kwargs)
+            frame = event_frame(xx, yy, pp, sensor_size=shape)
+            frame = frame.permute(1,2,0)
         else:
             raise NotImplementedError(f'{convert_method} not implemented!')
         frames.append(copy.deepcopy(frame))
