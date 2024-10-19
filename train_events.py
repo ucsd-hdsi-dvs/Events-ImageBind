@@ -337,6 +337,12 @@ if __name__ == "__main__":
         from datasets.MVSCEDataset import MVSCEDataset
         train_datasets.append(MVSCEDataset(data_dir=args.datasets_dir, mode="train"))
         test_datasets.append(MVSCEDataset(data_dir=args.datasets_dir, mode="test"))
+    
+    # add rgb-like dataset
+    if "rgb_like" in args.datasets:
+        from datasets.RGBLikeDataset import RGBLikeDataset
+        train_datasets.append(RGBLikeDataset(data_dir=args.datasets_dir, mode="train"))
+        test_datasets.append(RGBLikeDataset(data_dir=args.datasets_dir, mode="test"))
         
     # add event dataset
     if len(args.datasets) == 1:
