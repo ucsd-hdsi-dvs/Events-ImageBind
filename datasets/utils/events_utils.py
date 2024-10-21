@@ -12,8 +12,8 @@ from numba import njit, cuda
 # from dv import AedatFile
 from math import floor, ceil
 from tqdm import trange
-from .vis_utils import *
-from .utils import get_new_path, pkl_load
+# from .vis_utils import *
+# from .utils import get_new_path, pkl_load
 
 cam_settings = {
     "xz":  {'up': {'x': 0.029205246220929418, 'y': -0.07454904061931165, 'z': -0.9967895937136961}, 'center': {'x': 0.4152144677376415, 'y': -0.19700200366278003, 'z': 0.1318296812311048}, 'eye': {'x': -0.05808189772173178, 'y': 1.7511480688146275, 'z': -0.027738051796443258}},

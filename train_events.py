@@ -232,7 +232,7 @@ def parse_args():
     parser.add_argument("--device", type=str, default="cpu", help="Device to use for training ('cpu' or 'cuda')")
     parser.add_argument("--datasets_dir", type=str, default="./.datasets",
                         help="Directory containing the datasets")
-    parser.add_argument("--datasets", type=str, nargs="+", default=["mvsce"], choices=["dreambooth","event","mvsce"],
+    parser.add_argument("--datasets", type=str, nargs="+", default=["rgb_like"], choices=["dreambooth","event","mvsce"],
                         help="Datasets to use for training and validation")
     parser.add_argument("--full_model_checkpoint_dir", type=str, default="./.checkpoints/full",
                         help="Directory to save the full model checkpoints")
@@ -342,7 +342,7 @@ if __name__ == "__main__":
     if "rgb_like" in args.datasets:
         from datasets.RGBLikeDataset import RGBLikeDataset
         train_datasets.append(RGBLikeDataset(data_root='/eastdata/datasets/MVSEC/', mode='train'))
-        test_datasets.append(RGBLikeDataset(data_root='/eastdata/datasets/MVSEC/'), mode= 'test')
+        test_datasets.append(RGBLikeDataset(data_root='/eastdata/datasets/MVSEC/', mode= 'test'))
         
     # add event dataset
     if len(args.datasets) == 1:

@@ -11,8 +11,8 @@ import os.path as op
 import numpy as np
 import cv2
 import random
-from models.imagebind_model import ModalityType
-from datasets.utils import gen_discretized_event_volume
+from datasets.utils.events_utils import gen_discretized_event_volume
+
 
 def resize_pad(frame, size=224):
     """
