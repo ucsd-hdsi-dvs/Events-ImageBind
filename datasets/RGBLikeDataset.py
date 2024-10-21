@@ -10,7 +10,9 @@ import pickle as pkl
 import os.path as op
 import numpy as np
 import cv2
+import random
 from models.imagebind_model import ModalityType
+from datasets.utils import gen_discretized_event_volume
 
 def resize_pad(frame, size=224):
     """
@@ -48,7 +50,6 @@ def resize_pad(frame, size=224):
     frame = padding_transform(frame)
 
     return frame
-
 
 def events_to_image_torch(xs, ys, ps,
         device=None, sensor_size=(260, 346), clip_out_of_range=False,
@@ -97,60 +98,39 @@ def events_to_image_torch(xs, ys, ps,
         raise e
     return img
 
+
 class RGBLikeDataset(Dataset):
-    
-    def __init__(self,mode, data_dir, transform=None,seq_len=2,frame_size=(260, 346),random_seed=42):
-        self.mode=mode
-        self.data_root = data_dir
-        self.transform = transform
-        self.seq_len = seq_len
-        self.frame_size = frame_size
-        self.frame_normalize = transforms.Compose([
-                resize_pad,
-                transforms.Normalize([0.153, 0.153, 0.153], [0.165, 0.165, 0.165])])
+    def __init__ (self, data_root, mode, transform=None, frame_size=(260,346), num_bins=6):
+        with open('/eastdata/datasets/MVSEC/data_paths_slices.pkl', 'rb') as f:
+            paths_pack = pkl.load(f)
+        self.data_root = data_root + 'event_chunks_processed_train/'
+        if mode == 'train':
+            self.data_paths = paths_pack['train']
+        elif mode == 'test':
+            random.seed(42)
+            random.shuffle(paths_pack['train'])
+            self.data_paths = paths_pack['train'][:len(paths_pack['train']) // 20]
         
+        self.transform = transform
+        self.frame_size = frame_size
+        self.num_bins = num_bins
         self.event_frame_normalize = transforms.Compose([
                 resize_pad,
                 transforms.Normalize([0.127, 0.143, 0.267], [0.581, 0.610, 1.05])])
-        
-        self.paths = []
-        for file in os.listdir(data_dir):
-            if file.endswith('.pkl'):
-                self.paths.append(os.path.join(data_dir, file))
-        
-        train_paths, test_paths = train_test_split(self.paths, train_size=0.8, random_state=random_seed)
-        if self.mode == 'train':
-            self.data_paths = train_paths
-        elif self.mode == 'test':
-            self.data_paths = test_paths
-        else:
-            raise ValueError(f"Invalid mode argument. Expected 'train' or 'test', got {self.mode}")
         
     
     def __len__(self):
         return len(self.data_paths)
     
     def __getitem__(self, idx):
-        data_path = self.data_paths[idx]
+        data_path = op.join(self.data_root, self.data_paths[idx])
         with open(data_path, 'rb') as f:
             data_packet = pkl.load(f)
-        
-        
-        image_units=[]
-        for i in range(len(data_packet['images'])):
-            image=data_packet['images'][i]
-            # convert to 3 channels
-            image=np.repeat(image[...,None],3,axis=2).transpose(2,0,1)
-            image=torch.from_numpy(image).float()/255
-            image=self.frame_normalize(image)
-            image_units.append(image)
-        
-        image_units=torch.stack(image_units) # 2, 3, 224, 224
-        image_units=torch.stack([image_units[:-1],image_units[1:]],dim=2) # 1, 3,2, 224, 224
-        # image_units = np.stack([image_units[:-1], image_units[1:]], axis=1) 
-        
-        events=data_packet['events'] # (x,y,t,p)
-        # convert events to event frame
+
+        # Unpack data
+        events = data_packet['events']
+        voxel = gen_discretized_event_volume(events, [self.num_bins, *self.frame_size])
+
         events['polarity'][events['polarity']==0]=-1
         events_positive=events[events['polarity']==1]
         events_negative=events[events['polarity']==-1]
@@ -164,5 +144,4 @@ class RGBLikeDataset(Dataset):
         # event_frame=resize_pad(event_frame)
         event_frame=self.event_frame_normalize(event_frame)
         
-        return image_units[0],ModalityType.VISION, event_frame, ModalityType.EVENT
-        
+        return voxel, ModalityType.VISION, event_frame, ModalityType.EVENT

@@ -9,9 +9,13 @@ import os
 from functools import partial
 from types import SimpleNamespace
 from typing import Dict
+from torchvision import transforms
+from datasets.RGBLikeDataset import resize_pad
 
 import torch
 import torch.nn as nn
+from models.autoencoder.autoencoder import AutoEncoder
+from models.utils.load_ckpt import load_and_freeze_model
 
 from models.helpers import (EinOpsRearrange, LearnableLogitScaling, Normalize,
                             SelectElement, SelectEOSAndProject)
@@ -132,6 +136,12 @@ class ImageBindModel(nn.Module):
         self.modality_postprocessors = self._create_modality_postprocessors(
             out_embed_dim
         )
+        
+        self.autoencoder = AutoEncoder(in_dim=6, out_dim=3, relu=False)
+        self.autoencoder = load_and_freeze_model(self.autoencoder, '/eastdata/multi_percep_epoch47.ckpt')
+        self.rgb_like_normalize = transforms.Compose([
+                resize_pad,
+                transforms.Normalize([0.153, 0.153, 0.153], [0.165, 0.165, 0.165])])
 
     # preprocessors for each modality
     # image (1,3,224,224) or (1,3,2,224,224) ->[1, 257, 1024]
@@ -475,6 +485,10 @@ class ImageBindModel(nn.Module):
     def forward(self, inputs):
         outputs = {}
         for modality_key, modality_value in inputs.items():
+            if modality_key == ModalityType.VISION:
+                rgb_like, recon = self.autoencoder(modality_value)
+                modality_value = self.rgb_like_normalize(rgb_like)
+
             # reduce_list = (
             #     modality_value.ndim >= 5
             # )  # Audio and Video inputs consist of multiple clips
