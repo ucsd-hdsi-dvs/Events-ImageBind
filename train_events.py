@@ -244,14 +244,14 @@ def parse_args():
     parser.add_argument("--headless", action="store_true", help="Run in headless mode (Don't plot samples on start)")
 
     parser.add_argument("--max_epochs", type=int, default=500, help="Maximum number of epochs to train")
-    parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training and validation")
-    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument("--batch_size", type=int, default=8, help="Batch size for training and validation")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
     parser.add_argument("--momentum_betas", nargs=2, type=float, default=[0.9, 0.95],
                         help="Momentum beta 1 and 2 for Adam optimizer")
     parser.add_argument("--gradient_clip_val", type=float, default=1.0, help="Gradient clipping value")
     parser.add_argument("--temperature", type=float, default=0.07, help="Temperature parameter for InfoNCE loss")
-    parser.add_argument("--num_workers", type=int, default=12, help="Number of workers for data loading")
+    parser.add_argument("--num_workers", type=int, default=8, help="Number of workers for data loading")
     parser.add_argument("--self_contrast", action="store_true", help="Use self-contrast on the image modality")
 
     parser.add_argument("--lora", action="store_true", help="Use LoRA")
