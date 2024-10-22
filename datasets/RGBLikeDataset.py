@@ -4,7 +4,7 @@ from typing import Optional, Callable
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 import torch
-from models.imagebind_model import ModalityType
+import models.imagebind_model as model_mod
 from torchvision import transforms
 import pickle as pkl
 import os.path as op
@@ -131,11 +131,11 @@ class RGBLikeDataset(Dataset):
         events = data_packet['events']
         voxel = gen_discretized_event_volume(events, [self.num_bins, *self.frame_size])
 
-        events['polarity'][events['polarity']==0]=-1
-        events_positive=events[events['polarity']==1]
-        events_negative=events[events['polarity']==-1]
-        events_positive_frame=events_to_image_torch(events_positive['x'],events_positive['y'],events_positive['polarity'])
-        events_negative_frame=events_to_image_torch(events_negative['x'],events_negative['y'],events_negative['polarity'])
+        events['p'][events['p']==0]=-1
+        events_positive=events[events['p']==1]
+        events_negative=events[events['p']==-1]
+        events_positive_frame=events_to_image_torch(events_positive['x'],events_positive['y'],events_positive['p'])
+        events_negative_frame=events_to_image_torch(events_negative['x'],events_negative['y'],events_negative['p'])
         # abs negative channel
         events_negative_frame=torch.abs(events_negative_frame)
         events_sum_frame=events_positive_frame+events_negative_frame
@@ -144,4 +144,4 @@ class RGBLikeDataset(Dataset):
         # event_frame=resize_pad(event_frame)
         event_frame=self.event_frame_normalize(event_frame)
         
-        return voxel, ModalityType.VISION, event_frame, ModalityType.EVENT
+        return voxel, model_mod.ModalityType.VISION, event_frame, model_mod.ModalityType.EVENT

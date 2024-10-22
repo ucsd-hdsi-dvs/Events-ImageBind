@@ -229,9 +229,9 @@ class ImageBindTrain(L.LightningModule):
 def parse_args():
     parser = argparse.ArgumentParser(description="Train the ImageBind model with PyTorch Lightning and LoRA.")
     parser.add_argument("--seed", type=int, default=43, help="Random seed for reproducibility")
-    parser.add_argument("--device", type=str, default="cpu", help="Device to use for training ('cpu' or 'cuda')")
-    parser.add_argument("--datasets_dir", type=str, default="./.datasets",
-                        help="Directory containing the datasets")
+    parser.add_argument("--device", type=str, default="cuda", help="Device to use for training ('cpu' or 'cuda')")
+    # parser.add_argument("--datasets_dir", type=str, default="./.datasets",
+    #                     help="Directory containing the datasets")
     parser.add_argument("--datasets", type=str, nargs="+", default=["rgb_like"], choices=["dreambooth","event","mvsce"],
                         help="Datasets to use for training and validation")
     parser.add_argument("--full_model_checkpoint_dir", type=str, default="./.checkpoints/full",
@@ -250,7 +250,7 @@ def parse_args():
                         help="Momentum beta 1 and 2 for Adam optimizer")
     parser.add_argument("--gradient_clip_val", type=float, default=1.0, help="Gradient clipping value")
     parser.add_argument("--temperature", type=float, default=0.07, help="Temperature parameter for InfoNCE loss")
-    parser.add_argument("--num_workers", type=int, default=0, help="Number of workers for data loading")
+    parser.add_argument("--num_workers", type=int, default=8, help="Number of workers for data loading")
     parser.add_argument("--self_contrast", action="store_true", help="Use self-contrast on the image modality")
 
     parser.add_argument("--lora", action="store_true", help="Use LoRA")

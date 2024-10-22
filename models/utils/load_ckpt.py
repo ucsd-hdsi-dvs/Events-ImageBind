@@ -13,7 +13,13 @@ def load_and_freeze_model(model, checkpoint_path):
     """
     # Load the checkpoint
     checkpoint = torch.load(checkpoint_path, map_location=torch.device('cuda'))
-    model.load_state_dict(checkpoint['state_dict'])
+    sd=checkpoint['state_dict']
+    re_sd={
+                k.replace('model.', ''): v 
+                for k, v in sd.items() 
+                if 'rgbGAN' not in k
+            }
+    model.load_state_dict(re_sd)
 
     # Freeze the model parameters
     for param in model.parameters():

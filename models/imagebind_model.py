@@ -10,7 +10,7 @@ from functools import partial
 from types import SimpleNamespace
 from typing import Dict
 from torchvision import transforms
-from datasets.RGBLikeDataset import resize_pad
+
 
 import torch
 import torch.nn as nn
@@ -37,6 +37,56 @@ ModalityType = SimpleNamespace(
     IMU="imu",
     EVENT="event",
 )
+
+def resize_pad_batch(frames, size=224):
+    """
+    Resize a batch of frames such that the longer side of each frame is 224 pixels, 
+    and pad the shorter side to make it square (224x224).
+    
+    Parameters:
+        frames (torch.Tensor): Input tensor of shape (b, c, h, w).
+        size (int): New size for the longer side of each frame and the size to pad to.
+        
+    Returns:
+        torch.Tensor: The batch of resized and padded frames.
+    """
+
+    # Define the batch, channels, height, and width
+    b, c, h, w = frames.shape
+
+    # Get longer side for each frame
+    longer_side = max(h, w)
+
+    # Calculate the resize ratio
+    ratio = size / longer_side
+
+    # Resize transformation
+    resize_transform = transforms.Resize((int(h * ratio), int(w * ratio)))
+
+    # Apply resize to each image in the batch
+    resized_frames = torch.stack([resize_transform(frame) for frame in frames])
+
+    # Get new height and width after resize
+    _, _, new_h, new_w = resized_frames.shape
+
+    # Calculate padding
+    pad_height = (size - new_h) if new_h < size else 0
+    pad_width = (size - new_w) if new_w < size else 0
+
+    # Calculate padding for each side to center the image
+    pad_top = pad_height // 2
+    pad_bottom = pad_height - pad_top
+    pad_left = pad_width // 2
+    pad_right = pad_width - pad_left
+
+    # Padding transformation
+    padding_transform = transforms.Pad(padding=(pad_left, pad_top, pad_right, pad_bottom), fill=0, padding_mode='constant')
+
+    # Apply padding to each resized frame
+    padded_frames = torch.stack([padding_transform(frame) for frame in resized_frames])
+
+    return padded_frames
+
 
 # modality_preprocessors, nn.ModuleDict, preprocessors for each modality
 # modality_trunks, nn.ModuleDict, transformer trunk for each modality
@@ -140,7 +190,7 @@ class ImageBindModel(nn.Module):
         self.autoencoder = AutoEncoder(in_dim=6, out_dim=3, relu=False)
         self.autoencoder = load_and_freeze_model(self.autoencoder, '/eastdata/multi_percep_epoch47.ckpt')
         self.rgb_like_normalize = transforms.Compose([
-                resize_pad,
+                resize_pad_batch,
                 transforms.Normalize([0.153, 0.153, 0.153], [0.165, 0.165, 0.165])])
 
     # preprocessors for each modality
@@ -547,7 +597,7 @@ def imagebind_huge(pretrained=False):
                 progress=True,
             )
 
-        model.load_state_dict(torch.load(".checkpoints/imagebind_huge.pth"))
+        model.load_state_dict(torch.load(".checkpoints/imagebind_huge.pth"), strict=False)
 
     return model
 
