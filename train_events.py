@@ -58,7 +58,7 @@ class ImageBindTrain(L.LightningModule):
                  self_contrast=False, temperature=0.07,  momentum_betas=(0.9, 0.95), 
                  lora=False, lora_rank=4, lora_checkpoint_dir="./.checkpoints/lora",
                  lora_layer_idxs=None, lora_modality_names=None,
-                 linear_probing=False, checkpoint_path=None
+                 linear_probing=False, checkpoint_path=None, load_vision_to_event=True,
                  ):
         super().__init__()
         assert not (linear_probing and lora), \
@@ -72,7 +72,7 @@ class ImageBindTrain(L.LightningModule):
         
         # apply event layer
         eventmodel=EventModel()
-        eventmodel.apply_event_layers(self.model)
+        eventmodel.apply_event_layers(self.model, load_vision_to_event)
         
         if checkpoint_path is not None:
             checkpoint = torch.load(checkpoint_path)
@@ -232,6 +232,7 @@ def parse_args():
     parser.add_argument("--device", type=str, default="cuda", help="Device to use for training ('cpu' or 'cuda')")
     # parser.add_argument("--datasets_dir", type=str, default="./.datasets",
     #                     help="Directory containing the datasets")
+    parser.add_argument("--load_vision_to_event", action="store_true", help="Load vision to event layers")
     parser.add_argument("--datasets", type=str, nargs="+", default=["rgb_like"], choices=["dreambooth","event","mvsce"],
                         help="Datasets to use for training and validation")
     parser.add_argument("--full_model_checkpoint_dir", type=str, default="./.checkpoints/full",
@@ -243,14 +244,14 @@ def parse_args():
     parser.add_argument("--headless", action="store_true", help="Run in headless mode (Don't plot samples on start)")
 
     parser.add_argument("--max_epochs", type=int, default=500, help="Maximum number of epochs to train")
-    parser.add_argument("--batch_size", type=int, default=8, help="Batch size for training and validation")
-    parser.add_argument("--lr", type=float, default=5e-6, help="Learning rate")
+    parser.add_argument("--batch_size", type=int, default=32, help="Batch size for training and validation")
+    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
     parser.add_argument("--momentum_betas", nargs=2, type=float, default=[0.9, 0.95],
                         help="Momentum beta 1 and 2 for Adam optimizer")
     parser.add_argument("--gradient_clip_val", type=float, default=1.0, help="Gradient clipping value")
     parser.add_argument("--temperature", type=float, default=0.07, help="Temperature parameter for InfoNCE loss")
-    parser.add_argument("--num_workers", type=int, default=8, help="Number of workers for data loading")
+    parser.add_argument("--num_workers", type=int, default=12, help="Number of workers for data loading")
     parser.add_argument("--self_contrast", action="store_true", help="Use self-contrast on the image modality")
 
     parser.add_argument("--lora", action="store_true", help="Use LoRA")
@@ -391,7 +392,8 @@ if __name__ == "__main__":
                            lora=args.lora, lora_rank=args.lora_rank, lora_checkpoint_dir=args.lora_checkpoint_dir,
                            lora_layer_idxs=lora_layer_idxs if lora_layer_idxs else None,
                            lora_modality_names=lora_modality_names if lora_modality_names else None,
-                           linear_probing=args.linear_probing)
+                           linear_probing=args.linear_probing,
+                           load_vision_to_event=args.load_vision_to_event,)
 
     if args.full_model_checkpointing:
         checkpointing = {"enable_checkpointing": args.full_model_checkpointing,
@@ -406,7 +408,7 @@ if __name__ == "__main__":
     #                   max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
     #                   logger=wandb_logger, strategy='ddp_find_unused_parameters_true', **checkpointing)
     trainer = Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
-                      devices=1 if ":" not in device_name else int(device_name.split(":")[1]), deterministic=True,
+                      devices=4, deterministic=True,
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
                       logger=wandb_logger, **checkpointing)
 

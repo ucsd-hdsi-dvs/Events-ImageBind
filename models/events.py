@@ -161,13 +161,16 @@ class EventModel:
         load_layer(self.event_postprocessor,postprocessor_weights)
             
     
-    def apply_event_layers(self,model,path='.checkpoints/imagebind_huge.pth'):
+    def apply_event_layers(self,model,path='.checkpoints/imagebind_huge.pth', load_vision_to_event=True):
         # check model is instance of image bind model
         assert isinstance(model,ImageBindModel)
         
+        if load_vision_to_event:
+            print('Loading vision weights to event model')
+            self.load_weights(path,modality="vision")
+        else:
+            print('training rgblike model from scratch')
         # load weights for each layers
-        self.load_weights(path)
-        
         # apply events modality to each layer
         model.modality_preprocessors.update(self.apply_events_modality_preprocessor())
         model.modality_trunks.update(self.apply_events_modality_trunks())

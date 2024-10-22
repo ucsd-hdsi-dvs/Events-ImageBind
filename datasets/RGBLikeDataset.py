@@ -109,7 +109,7 @@ class RGBLikeDataset(Dataset):
         elif mode == 'test':
             random.seed(42)
             random.shuffle(paths_pack['train'])
-            self.data_paths = paths_pack['train'][:len(paths_pack['train']) // 20]
+            self.data_paths = paths_pack['train'][:len(paths_pack['train']) // 10]
         
         self.transform = transform
         self.frame_size = frame_size
@@ -131,17 +131,16 @@ class RGBLikeDataset(Dataset):
         events = data_packet['events']
         voxel = gen_discretized_event_volume(events, [self.num_bins, *self.frame_size])
 
-        events['p'][events['p']==0]=-1
-        events_positive=events[events['p']==1]
-        events_negative=events[events['p']==-1]
-        events_positive_frame=events_to_image_torch(events_positive['x'],events_positive['y'],events_positive['p'])
-        events_negative_frame=events_to_image_torch(events_negative['x'],events_negative['y'],events_negative['p'])
-        # abs negative channel
-        events_negative_frame=torch.abs(events_negative_frame)
-        events_sum_frame=events_positive_frame+events_negative_frame
+        image_units=[]
+        for i in range(len(data_packet['images'])):
+            image=data_packet['images'][i]
+            # convert to 3 channels
+            image=np.repeat(image[...,None],3,axis=2).transpose(2,0,1)
+            image=torch.from_numpy(image).float()/255
+            image=self.frame_normalize(image)
+            image_units.append(image)
         
-        event_frame=torch.stack([events_positive_frame,events_negative_frame,events_sum_frame],dim=0)
-        # event_frame=resize_pad(event_frame)
-        event_frame=self.event_frame_normalize(event_frame)
+        image_units=torch.stack(image_units) # 2, 3, 224, 224
+        image_units=torch.stack([image_units[:-1],image_units[1:]],dim=2) # 1, 3,2, 224, 224
         
-        return voxel, model_mod.ModalityType.VISION, event_frame, model_mod.ModalityType.EVENT
+        return image_units[0], model_mod.ModalityType.VISION, voxel, model_mod.ModalityType.EVENT

@@ -535,7 +535,7 @@ class ImageBindModel(nn.Module):
     def forward(self, inputs):
         outputs = {}
         for modality_key, modality_value in inputs.items():
-            if modality_key == ModalityType.VISION:
+            if modality_key == ModalityType.EVENT:
                 rgb_like, recon = self.autoencoder(modality_value)
                 modality_value = self.rgb_like_normalize(rgb_like)
 
