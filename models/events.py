@@ -140,7 +140,8 @@ class EventModel:
     def apply_events_modality_postprocessor(self):
         return nn.ModuleDict({ModalityType.EVENT:self.event_postprocessor})
     
-    def load_weights(self,path='../.checkpoints/imagebind_huge.pth',modality="vision"):
+    def load_weights(self,path,modality="vision"):
+        path = '/root/Events-ImageBind/.checkpoints/imagebind_huge.pth'
         state_dict = torch.load(path)
         preprocessor_weights=[key for key in state_dict.keys() if key.startswith(f"modality_preprocessors.{modality}")]
         trunk_weights=[key for key in state_dict.keys() if key.startswith(f"modality_trunks.{modality}")]

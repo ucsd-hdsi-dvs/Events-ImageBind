@@ -132,8 +132,8 @@ class RGBLikeDataset(Dataset):
         voxel = gen_discretized_event_volume(events, [self.num_bins, *self.frame_size])
 
         image_units=[]
-        for i in range(len(data_packet['images'])):
-            image=data_packet['images'][i]
+        for i in range(len(data_packet['frames'])):
+            image=data_packet['frames'][i]
             # convert to 3 channels
             image=np.repeat(image[...,None],3,axis=2).transpose(2,0,1)
             image=torch.from_numpy(image).float()/255
