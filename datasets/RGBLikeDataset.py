@@ -137,7 +137,7 @@ class RGBLikeDataset(Dataset):
             # convert to 3 channels
             image=np.repeat(image[...,None],3,axis=2).transpose(2,0,1)
             image=torch.from_numpy(image).float()/255
-            image=self.frame_normalize(image)
+            image=self.event_frame_normalize(image)
             image_units.append(image)
         
         image_units=torch.stack(image_units) # 2, 3, 224, 224
