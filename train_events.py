@@ -408,7 +408,7 @@ if __name__ == "__main__":
     #                   max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
     #                   logger=wandb_logger, strategy='ddp_find_unused_parameters_true', **checkpointing)
     trainer = Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
-                      devices=4, deterministic=True,
+                      devices=1, deterministic=True,
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
                       logger=wandb_logger, **checkpointing)
 
