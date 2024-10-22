@@ -394,6 +394,7 @@ if __name__ == "__main__":
                            lora_modality_names=lora_modality_names if lora_modality_names else None,
                            linear_probing=args.linear_probing,
                            load_vision_to_event=args.load_vision_to_event,)
+     
 
     if args.full_model_checkpointing:
         checkpointing = {"enable_checkpointing": args.full_model_checkpointing,
@@ -411,7 +412,7 @@ if __name__ == "__main__":
                       devices=1, deterministic=True,
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
                       logger=wandb_logger, **checkpointing)
-
+ 
     if args.checkpoint_path is None:
         trainer.fit(model, train_loader, val_loader)
     else:
