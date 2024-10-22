@@ -186,7 +186,7 @@ class ImageBindTrain(L.LightningModule):
                 dual_nll /= 2
             # Logging loss
             self.log(mode + "_loss_" + contrast[feats_idx], nll, prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size, synthetic=True)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
             # Get ranking position of positive example
             comb_sim = torch.cat(
                 [cos_sim[pos_mask][:, None], cos_sim.masked_fill(pos_mask, -9e15)],  # First position positive example
@@ -195,14 +195,14 @@ class ImageBindTrain(L.LightningModule):
             sim_argsort = comb_sim.argsort(dim=-1, descending=True).argmin(dim=-1)
             # Logging ranking metrics
             self.log(mode + "_acc_top1", (sim_argsort == 0).float().mean(), prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size, synthetic=True)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
             self.log(mode + "_acc_top5", (sim_argsort < 5).float().mean(), prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size, synthetic=True)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
             self.log(mode + "_acc_mean_pos", 1 + sim_argsort.float().mean(), prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size, synthetic=True)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
 
         self.log(mode + "_loss", dual_nll, prog_bar=True,
-                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size, synthetic=True)
+                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
         return dual_nll
 
     def training_step(self, batch, batch_idx):
