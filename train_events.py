@@ -31,6 +31,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, ConcatDataset
 import torchvision
 from torchvision import transforms
+from pytorch_lightning.strategies import DDPStrategy
 
 from models import imagebind_model
 from models import lora as LoRA
@@ -415,10 +416,16 @@ if __name__ == "__main__":
     #                   devices=1 if ":" not in device_name else int(device_name.split(":")[1]), deterministic=True,
     #                   max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
     #                   logger=wandb_logger, strategy='ddp_find_unused_parameters_true', **checkpointing)
+    strategy = DDPStrategy(process_group_backend='nccl',
+                            find_unused_parameters=False,
+                            gradient_as_bucket_view=True,
+                            static_graph=False,
+                            )
+    ddp_active = True
     trainer = Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
-                      devices=4, deterministic=True,
+                      devices=4, deterministic=True, sync_batchnorm=True if ddp_active else False, precision=32,
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
-                      logger=wandb_logger, strategy="ddp_find_unused_parameters_true", **checkpointing)
+                      logger=wandb_logger, strategy=strategy, **checkpointing)
  
     if args.checkpoint_path is None:
         trainer.fit(model, train_loader, val_loader)
