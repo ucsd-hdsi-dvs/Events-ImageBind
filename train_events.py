@@ -252,8 +252,8 @@ def parse_args():
     parser.add_argument("--headless", action="store_true", help="Run in headless mode (Don't plot samples on start)")
 
     parser.add_argument("--max_epochs", type=int, default=500, help="Maximum number of epochs to train")
-    parser.add_argument("--batch_size", type=int, default=6, help="Batch size for training and validation")
-    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument("--batch_size", type=int, default=8, help="Batch size for training and validation")
+    parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
     parser.add_argument("--momentum_betas", nargs=2, type=float, default=[0.9, 0.95],
                         help="Momentum beta 1 and 2 for Adam optimizer")
@@ -418,9 +418,9 @@ if __name__ == "__main__":
     #                   logger=wandb_logger, strategy='ddp_find_unused_parameters_true', **checkpointing)
 
     trainer = Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
-                      devices=4, deterministic=True, precision=16,
+                      devices=1, deterministic=True, precision=16,
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
-                      logger=wandb_logger, strategy="ddp", **checkpointing)
+                      logger=wandb_logger, **checkpointing)
  
     if args.checkpoint_path is None:
         trainer.fit(model, train_loader, val_loader)
