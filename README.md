@@ -1,4 +1,6 @@
 # Unofficial ImageBind Fine-tuning with LoRA
+ZZY: efd077f820adb913b092acabce74131d3cda5338 
+QJC: bf4df02d8f49ac07004a93619feee8637d967601
 
 This is an unofficial implementation of the ImageBind Trainer with [LoRA](https://openreview.net/forum?id=nZeVKeeFYf9) fine-tuning. To adapt this repository to your own dataset, 
 checkout `train.py` and replace the `dreambooth` with your own.
