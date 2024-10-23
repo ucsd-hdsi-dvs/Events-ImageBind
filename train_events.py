@@ -366,7 +366,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         shuffle=True,
         drop_last=True,
-        pin_memory=False,
+        pin_memory=True,
         num_workers=args.num_workers,
     )
     val_loader = DataLoader(
@@ -374,7 +374,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         shuffle=False,
         drop_last=False,
-        pin_memory=False,
+        pin_memory=True,
         num_workers=args.num_workers,
     )
 
