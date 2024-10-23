@@ -162,7 +162,7 @@ class EventModel:
         load_layer(self.event_postprocessor,postprocessor_weights)
             
     
-    def apply_event_layers(self,model,path='.checkpoints/imagebind_huge.pth', load_vision_to_event=False):
+    def apply_event_layers(self,model, load_vision_to_event ,path='.checkpoints/imagebind_huge.pth'):
         # check model is instance of image bind model
         assert isinstance(model,ImageBindModel)
         
