@@ -86,6 +86,8 @@ class ImageBindTrain(L.LightningModule):
         
         for modality_preprocessor in self.model.modality_preprocessors.children():
             modality_preprocessor.requires_grad_(False)
+
+
         # for modality_trunk in self.model.modality_trunks.children():
         #     modality_trunk.requires_grad_(False)
         # freeze vision channels
@@ -95,6 +97,11 @@ class ImageBindTrain(L.LightningModule):
             params.requires_grad_(False)
         for params in self.model.modality_heads[ModalityType.VISION].parameters():
             params.requires_grad_(False)
+        
+        for params in self.model.modality_preprocessors[ModalityType.EVENT].parameters():
+            if not load_vision_to_event:
+                params.requires_grad_(True)
+                print('unfreezing event preprocessor')
         
         if lora:
             for modality_preprocessor in self.model.modality_preprocessors.children():
