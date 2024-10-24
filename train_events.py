@@ -194,7 +194,7 @@ class ImageBindTrain(L.LightningModule):
                 dual_nll /= 2
             # Logging loss
             self.log(mode + "_loss_" + contrast[feats_idx], nll, prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size, sync_dist=True)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
             # Get ranking position of positive example
             comb_sim = torch.cat(
                 [cos_sim[pos_mask][:, None], cos_sim.masked_fill(pos_mask, -9e15)],  # First position positive example
@@ -203,14 +203,14 @@ class ImageBindTrain(L.LightningModule):
             sim_argsort = comb_sim.argsort(dim=-1, descending=True).argmin(dim=-1)
             # Logging ranking metrics
             self.log(mode + "_acc_top1", (sim_argsort == 0).float().mean(), prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size, sync_dist=True)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
             self.log(mode + "_acc_top5", (sim_argsort < 5).float().mean(), prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size, sync_dist=True)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
             self.log(mode + "_acc_mean_pos", 1 + sim_argsort.float().mean(), prog_bar=True,
-                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size, sync_dist=True)
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
 
         self.log(mode + "_loss", dual_nll, prog_bar=True,
-                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size, sync_dist=True)
+                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
         return dual_nll
 
     def training_step(self, batch, batch_idx):
@@ -252,7 +252,7 @@ def parse_args():
     parser.add_argument("--headless", action="store_true", help="Run in headless mode (Don't plot samples on start)")
 
     parser.add_argument("--max_epochs", type=int, default=500, help="Maximum number of epochs to train")
-    parser.add_argument("--batch_size", type=int, default=8, help="Batch size for training and validation")
+    parser.add_argument("--batch_size", type=int, default=6, help="Batch size for training and validation")
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--weight_decay", type=float, default=1e-4, help="Weight decay")
     parser.add_argument("--momentum_betas", nargs=2, type=float, default=[0.9, 0.95],
@@ -366,7 +366,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         shuffle=True,
         drop_last=True,
-        pin_memory=True,
+        pin_memory=False,
         num_workers=args.num_workers,
     )
     val_loader = DataLoader(
@@ -374,7 +374,7 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         shuffle=False,
         drop_last=False,
-        pin_memory=True,
+        pin_memory=False,
         num_workers=args.num_workers,
     )
 
@@ -418,7 +418,7 @@ if __name__ == "__main__":
     #                   logger=wandb_logger, strategy='ddp_find_unused_parameters_true', **checkpointing)
 
     trainer = Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
-                      devices=1, deterministic=True, precision=16,
+                      devices=1, deterministic=True,
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
                       logger=wandb_logger, **checkpointing)
  
