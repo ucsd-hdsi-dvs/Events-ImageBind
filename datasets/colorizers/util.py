@@ -6,11 +6,6 @@ import torch
 import torch.nn.functional as F
 from IPython import embed
 
-def load_img(img_path):
-	out_np = np.asarray(Image.open(img_path))
-	if(out_np.ndim==2):
-		out_np = np.tile(out_np[:,:,None],3)
-	return out_np
 
 def resize_img(img, HW=(256,256), resample=3):
 	return np.asarray(Image.fromarray(img).resize((HW[1],HW[0]), resample=resample))
