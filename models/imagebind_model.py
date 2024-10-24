@@ -11,7 +11,7 @@ from types import SimpleNamespace
 from typing import Dict
 from torchvision import transforms
 
-
+from datasets.colorizers import *
 import torch
 import torch.nn as nn
 from models.autoencoder.autoencoder import AutoEncoder
@@ -37,7 +37,6 @@ ModalityType = SimpleNamespace(
     IMU="imu",
     EVENT="event",
 )
-
 def resize_pad_batch(frames, size=224):
     """
     Resize a batch of frames such that the longer side of each frame is 224 pixels, 
@@ -190,6 +189,11 @@ class ImageBindModel(nn.Module):
         self.autoencoder = AutoEncoder(in_dim=6, out_dim=3, relu=False)
         self.autoencoder = load_and_freeze_model(self.autoencoder, '/eastdata/multi_percep_epoch47.ckpt')
         self.rgb_like_normalize = transforms.Compose([
+                resize_pad_batch,
+                transforms.Normalize([0.153, 0.153, 0.153], [0.165, 0.165, 0.165])])
+        
+        self.colorizer = siggraph17(pretrained=True).eval()
+        self.frame_normalize = transforms.Compose([
                 resize_pad_batch,
                 transforms.Normalize([0.153, 0.153, 0.153], [0.165, 0.165, 0.165])])
 
@@ -538,7 +542,41 @@ class ImageBindModel(nn.Module):
             if modality_key == ModalityType.EVENT:
                 rgb_like, recon = self.autoencoder(modality_value)
                 modality_value = self.rgb_like_normalize(rgb_like)
+            # STILL HAVE BUG
+            elif modality_key == ModalityType.VISION:
+                batch_size, channels, frames, height, width = modality_value.shape
+                modality_value = modality_value.permute(0, 2, 1, 3, 4)  # Shape: (batch_size, frames, channels, height, width)
+                modality_value = modality_value.reshape(batch_size * frames, channels, height, width)  # Shape: (batch_size * frames, channels, height, width)
 
+                # Process all frames at once
+                tens_l_orig, tens_l_rs = preprocess_img(modality_value, HW=(256, 256))
+
+                # Apply the colorizer to all frames
+                colorized = self.colorizer(tens_l_rs)
+
+                # Post-process all frames
+                images = postprocess_tens(tens_l_orig, colorized)
+
+                # Convert numpy images to torch tensor
+                images = torch.from_numpy(images.transpose(0, 3, 1, 2)).float() / 255  # Shape: (batch_size * frames, channels, height, width)
+
+                # Normalize frames
+                images = self.frame_normalize(images)
+
+                # Reshape back to original batch and frame dimensions
+                images = images.reshape(batch_size, frames, channels, height, width)
+                modality_value = images.permute(0, 2, 1, 3, 4)  # Shape: (batch_size, channels, frames, height, width)
+
+                # for b in range(batch_size):
+                #     for f in range(frames):
+                #         frame = modality_value[b, :, f, :, :]
+                #         (tens_l_orig, tens_l_rs) = preprocess_img(frame, HW=(256,256))
+                #         #img_bw = postprocess_tens(tens_l_orig, torch.cat((0*tens_l_orig,0*tens_l_orig),dim=1))
+                #         image = postprocess_tens(tens_l_orig, self.colorizer(tens_l_rs))
+                #         image = torch.from_numpy(image.transpose(2, 0, 1)).float() / 255
+                #         image=self.frame_normalize(image)
+                #         modality_value[b, :, f, :, :] = image
+                        
             # reduce_list = (
             #     modality_value.ndim >= 5
             # )  # Audio and Video inputs consist of multiple clips
