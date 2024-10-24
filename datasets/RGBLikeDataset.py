@@ -11,6 +11,7 @@ import os.path as op
 import numpy as np
 import cv2
 import random
+from datasets.colorizers import *
 from datasets.utils.events_utils import gen_discretized_event_volume
 
 
@@ -111,9 +112,14 @@ class RGBLikeDataset(Dataset):
             random.shuffle(paths_pack['train'])
             self.data_paths = paths_pack['train'][:len(paths_pack['train']) // 10]
         
+        self.colorizer = siggraph17(pretrained=True).eval()
+        # self.colorizer = self.colorizer.cuda()
         self.transform = transform
         self.frame_size = frame_size
         self.num_bins = num_bins
+        self.frame_normalize = transforms.Compose([
+                resize_pad,
+                transforms.Normalize([0.153, 0.153, 0.153], [0.165, 0.165, 0.165])])
         self.event_frame_normalize = transforms.Compose([
                 resize_pad,
                 transforms.Normalize([0.127, 0.143, 0.267], [0.581, 0.610, 1.05])])
@@ -132,12 +138,24 @@ class RGBLikeDataset(Dataset):
         voxel = gen_discretized_event_volume(events, [self.num_bins, *self.frame_size])
 
         image_units=[]
+        # for i in range(len(data_packet['frames'])):
+        #     image=data_packet['frames'][i]
+        #     # convert to 3 channels
+        #     image=np.repeat(image[...,None],3,axis=2).transpose(2,0,1)
+        #     image=torch.from_numpy(image).float()/255
+        #     print('image shape:', image.shape)
+        #     image=self.event_frame_normalize(image)
+        #     image_units.append(image)
+            
         for i in range(len(data_packet['frames'])):
             image=data_packet['frames'][i]
             # convert to 3 channels
-            image=np.repeat(image[...,None],3,axis=2).transpose(2,0,1)
-            image=torch.from_numpy(image).float()/255
-            image=self.event_frame_normalize(image)
+            image= np.repeat(image[...,None],3,axis=2)
+            (tens_l_orig, tens_l_rs) = preprocess_img(image, HW=(256,256))
+            #img_bw = postprocess_tens(tens_l_orig, torch.cat((0*tens_l_orig,0*tens_l_orig),dim=1))
+            image = postprocess_tens(tens_l_orig, self.colorizer(tens_l_rs))
+            image = torch.from_numpy(image.transpose(2, 0, 1)).float() / 255
+            image=self.frame_normalize(image)
             image_units.append(image)
         
         image_units=torch.stack(image_units) # 2, 3, 224, 224
