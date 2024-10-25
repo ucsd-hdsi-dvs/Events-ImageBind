@@ -416,11 +416,11 @@ if __name__ == "__main__":
     #                   devices=1 if ":" not in device_name else int(device_name.split(":")[1]), deterministic=True,
     #                   max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
     #                   logger=wandb_logger, strategy='ddp_find_unused_parameters_true', **checkpointing)
-    strategy = DDPStrategy(process_group_backend='nccl',
-                            find_unused_parameters=False,
-                            gradient_as_bucket_view=True,
-                            static_graph=False,
-                            )
+    # strategy = DDPStrategy(process_group_backend='nccl',
+    #                         find_unused_parameters=False,
+    #                         gradient_as_bucket_view=True,
+    #                         static_graph=False,
+                            # )
     ddp_active = True
     trainer = Trainer(accelerator="gpu",
                       devices=torch.cuda.device_count(), #deterministic=True, sync_batchnorm=True if ddp_active else False, precision=32,
