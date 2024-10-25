@@ -422,10 +422,10 @@ if __name__ == "__main__":
                             static_graph=False,
                             )
     ddp_active = True
-    trainer = Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
-                      devices=4, deterministic=True, sync_batchnorm=True if ddp_active else False, precision=32,
+    trainer = Trainer(accelerator="gpu",
+                      devices=torch.cuda.device_count(), #deterministic=True, sync_batchnorm=True if ddp_active else False, precision=32,
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
-                      logger=wandb_logger, strategy=strategy, **checkpointing)
+                      logger=wandb_logger, strategy='ddp', **checkpointing)
  
     if args.checkpoint_path is None:
         trainer.fit(model, train_loader, val_loader)
