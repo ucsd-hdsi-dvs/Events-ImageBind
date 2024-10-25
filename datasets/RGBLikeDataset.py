@@ -104,13 +104,12 @@ class RGBLikeDataset(Dataset):
         with open('/eastdata/datasets/MVSEC/data_paths_slices.pkl', 'rb') as f:
             paths_pack = pkl.load(f)
         self.data_root = data_root + 'event_chunks_processed_train/'
+        train_paths, test_paths = train_test_split(paths_pack['train'], test_size=0.2, random_state=42)
         if mode == 'train':
-            self.data_paths = paths_pack['train']
+            self.data_paths = train_paths
         elif mode == 'test':
-            random.seed(42)
-            random.shuffle(paths_pack['train'])
-            self.data_paths = paths_pack['train'][:len(paths_pack['train']) // 10]
-        
+            self.data_paths = test_paths
+            
         self.transform = transform
         self.frame_size = frame_size
         self.num_bins = num_bins
