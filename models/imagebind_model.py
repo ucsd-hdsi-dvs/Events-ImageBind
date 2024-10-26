@@ -101,10 +101,14 @@ def batch_min_max_normalize(batch_tensor):
     return normalized_batch
 
 def per_image_normalize(batch_tensor, mean=[0.153, 0.153, 0.153], std=[0.165, 0.165, 0.165]):
+    # Move mean and std to the same device as batch_tensor
+    mean = torch.tensor(mean, device=batch_tensor.device).view(3, 1, 1)
+    std = torch.tensor(std, device=batch_tensor.device).view(3, 1, 1)
+    
     # Normalize each image in the batch independently
     normalized_batch = torch.empty_like(batch_tensor)
     for i in range(batch_tensor.size(0)):  # Loop over each image in the batch
-        normalized_batch[i] = (batch_tensor[i] - torch.tensor(mean).view(3, 1, 1)) / torch.tensor(std).view(3, 1, 1)
+        normalized_batch[i] = (batch_tensor[i] - mean) / std
     return normalized_batch
 
 class ImageBindModel(nn.Module):
