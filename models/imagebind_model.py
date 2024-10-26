@@ -93,6 +93,20 @@ def resize_pad_batch(frames, size=224):
 # modality_heads, nn.ModuleDict, input modality embedding -> output embedding
 # modality_postprocessors, nn.ModuleDict, output embedding -> output embedding
 
+def batch_min_max_normalize(batch_tensor):
+    # (batch, 3, h, w) -> Normalize each batch individually
+    batch_min = batch_tensor.view(batch_tensor.size(0), -1).min(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+    batch_max = batch_tensor.view(batch_tensor.size(0), -1).max(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+    normalized_batch = (batch_tensor - batch_min) / (batch_max - batch_min + 1e-5)  # Add epsilon for stability
+    return normalized_batch
+
+def per_image_normalize(batch_tensor, mean=[0.153, 0.153, 0.153], std=[0.165, 0.165, 0.165]):
+    # Normalize each image in the batch independently
+    normalized_batch = torch.empty_like(batch_tensor)
+    for i in range(batch_tensor.size(0)):  # Loop over each image in the batch
+        normalized_batch[i] = (batch_tensor[i] - torch.tensor(mean).view(3, 1, 1)) / torch.tensor(std).view(3, 1, 1)
+    return normalized_batch
+
 class ImageBindModel(nn.Module):
     def __init__(
         self,
@@ -190,8 +204,10 @@ class ImageBindModel(nn.Module):
         self.autoencoder = AutoEncoder(in_dim=6, out_dim=3, relu=False)
         self.autoencoder = load_and_freeze_model(self.autoencoder, '/eastdata/multi_percep_epoch47.ckpt')
         self.rgb_like_normalize = transforms.Compose([
+            ## this is for the same method when saving the png
+                batch_min_max_normalize,
                 resize_pad_batch,
-                transforms.Normalize([0.153, 0.153, 0.153], [0.165, 0.165, 0.165])])
+                per_image_normalize])
 
     # preprocessors for each modality
     # image (1,3,224,224) or (1,3,2,224,224) ->[1, 257, 1024]
