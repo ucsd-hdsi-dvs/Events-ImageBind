@@ -93,6 +93,7 @@ def resize_pad_batch(frames, size=224):
 # modality_heads, nn.ModuleDict, input modality embedding -> output embedding
 # modality_postprocessors, nn.ModuleDict, output embedding -> output embedding
 
+#! TODO: change this normalization: make sure done all the same to the rgb like
 def batch_min_max_normalize(batch_tensor):
     # (batch, 3, h, w) -> Normalize each batch individually
     batch_min = batch_tensor.view(batch_tensor.size(0), -1).min(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
