@@ -9,6 +9,7 @@ from torchvision import transforms
 import pickle as pkl
 import os.path as op
 import numpy as np
+from PIL import Image
 import cv2
 import random
 from datasets.utils.events_utils import gen_discretized_event_volume
@@ -109,13 +110,24 @@ class RGBLikeDataset(Dataset):
             self.data_paths = train_paths
         elif mode == 'test':
             self.data_paths = test_paths
+        self.imagenet_paths = paths_pack['imagenet']
+        self.imagenet_transform = transforms.Compose([
+            # Resize the image so that the smaller side is at least 260 pixels, maintaining aspect ratio
+            transforms.Resize((260)),
+            # Crop the central part of the image to exactly 260x346
+            transforms.CenterCrop((260, 346)),
+            # Converts to tensor for PyTorch
+            transforms.ToTensor(),
+            # Normalize using ImageNet mean and standard deviation
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])
             
         self.transform = transform
         self.frame_size = frame_size
         self.num_bins = num_bins
         self.event_frame_normalize = transforms.Compose([
                 resize_pad,
-                transforms.Normalize([0.127, 0.143, 0.267], [0.581, 0.610, 1.05])])
+                transforms.Normalize([0.153, 0.153, 0.153], [0.165, 0.165, 0.165])])
         
     
     def __len__(self):
@@ -141,5 +153,15 @@ class RGBLikeDataset(Dataset):
         
         image_units=torch.stack(image_units) # 2, 3, 224, 224
         image_units=torch.stack([image_units[:-1],image_units[1:]],dim=2) # 1, 3,2, 224, 224
+        random_rgb = random.choice(self.imagenet_paths)
+        # load rgb image in the format of jepg
+        random_rgb = cv2.imread(random_rgb , cv2.IMREAD_COLOR)  # This loads the image in BGR color order
+
+        # Convert BGR to RGB (if you are planning to display it with matplotlib, for example)
+        random_rgb = cv2.cvtColor(random_rgb , cv2.COLOR_BGR2RGB)
+        # Convert the NumPy array to a PyTorch tensor
+        random_rgb = Image.fromarray(random_rgb)
+
+        random_rgb = self.imagenet_transform(random_rgb)
         
-        return image_units[0], model_mod.ModalityType.VISION, voxel, model_mod.ModalityType.EVENT
+        return image_units[0], model_mod.ModalityType.VISION, voxel, model_mod.ModalityType.EVENT, random_rgb

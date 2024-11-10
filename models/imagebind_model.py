@@ -101,7 +101,7 @@ def batch_min_max_normalize(batch_tensor):
     normalized_batch = (batch_tensor - batch_min) / (batch_max - batch_min + 1e-5)  # Add epsilon for stability
     return normalized_batch
 
-def per_image_normalize(batch_tensor, mean=[0.153, 0.153, 0.153], std=[0.165, 0.165, 0.165]):
+def per_image_normalize(batch_tensor, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
     # Move mean and std to the same device as batch_tensor
     mean = torch.tensor(mean, device=batch_tensor.device).view(3, 1, 1)
     std = torch.tensor(std, device=batch_tensor.device).view(3, 1, 1)
@@ -206,13 +206,13 @@ class ImageBindModel(nn.Module):
             out_embed_dim
         )
         
-        self.autoencoder = AutoEncoder(in_dim=6, out_dim=3, relu=False)
-        self.autoencoder = load_and_freeze_model(self.autoencoder, '/eastdata/multi_percep_epoch99.ckpt')
-        self.rgb_like_normalize = transforms.Compose([
-            ## this is for the same method when saving the png
-                batch_min_max_normalize,
-                resize_pad_batch,
-                per_image_normalize])
+        # self.autoencoder = AutoEncoder(in_dim=6, out_dim=3)
+        # # self.autoencoder = load_and_freeze_model(self.autoencoder, '/eastdata/multi_percep_epoch99.ckpt')
+        # self.rgb_like_normalize = transforms.Compose([
+        #     ## this is for the same method when saving the png
+        #         # batch_min_max_normalize,
+        #         resize_pad_batch,
+        #         per_image_normalize])
 
     # preprocessors for each modality
     # image (1,3,224,224) or (1,3,2,224,224) ->[1, 257, 1024]
@@ -556,9 +556,9 @@ class ImageBindModel(nn.Module):
     def forward(self, inputs):
         outputs = {}
         for modality_key, modality_value in inputs.items():
-            if modality_key == ModalityType.EVENT:
-                rgb_like, recon = self.autoencoder(modality_value)
-                modality_value = self.rgb_like_normalize(rgb_like)
+            # if modality_key == ModalityType.EVENT:
+            #     rgb_like, recon = self.autoencoder(modality_value)
+            #     modality_value = self.rgb_like_normalize(rgb_like)
 
             # reduce_list = (
             #     modality_value.ndim >= 5

@@ -37,6 +37,9 @@ from models import imagebind_model
 from models import lora as LoRA
 from models.imagebind_model import ModalityType, load_module, save_module
 from models.events import EventModel
+from models.gan_loss import rgbGANLoss
+from models.losses import *
+from models.autoencoder.autoencoder import AutoEncoder
 
 logging.basicConfig(level=logging.INFO, force=True)
 
@@ -44,6 +47,80 @@ logging.basicConfig(level=logging.INFO, force=True)
 LOG_ON_STEP = True
 LOG_ON_EPOCH = True
 
+
+def resize_pad_batch(frames, size=224):
+    """
+    Resize a batch of frames such that the longer side of each frame is 224 pixels, 
+    and pad the shorter side to make it square (224x224).
+    
+    Parameters:
+        frames (torch.Tensor): Input tensor of shape (b, c, h, w).
+        size (int): New size for the longer side of each frame and the size to pad to.
+        
+    Returns:
+        torch.Tensor: The batch of resized and padded frames.
+    """
+
+    # Define the batch, channels, height, and width
+    b, c, h, w = frames.shape
+
+    # Get longer side for each frame
+    longer_side = max(h, w)
+
+    # Calculate the resize ratio
+    ratio = size / longer_side
+
+    # Resize transformation
+    resize_transform = transforms.Resize((int(h * ratio), int(w * ratio)))
+
+    # Apply resize to each image in the batch
+    resized_frames = torch.stack([resize_transform(frame) for frame in frames])
+
+    # Get new height and width after resize
+    _, _, new_h, new_w = resized_frames.shape
+
+    # Calculate padding
+    pad_height = (size - new_h) if new_h < size else 0
+    pad_width = (size - new_w) if new_w < size else 0
+
+    # Calculate padding for each side to center the image
+    pad_top = pad_height // 2
+    pad_bottom = pad_height - pad_top
+    pad_left = pad_width // 2
+    pad_right = pad_width - pad_left
+
+    # Padding transformation
+    padding_transform = transforms.Pad(padding=(pad_left, pad_top, pad_right, pad_bottom), fill=0, padding_mode='constant')
+
+    # Apply padding to each resized frame
+    padded_frames = torch.stack([padding_transform(frame) for frame in resized_frames])
+
+    return padded_frames
+
+
+# modality_preprocessors, nn.ModuleDict, preprocessors for each modality
+# modality_trunks, nn.ModuleDict, transformer trunk for each modality
+# modality_heads, nn.ModuleDict, input modality embedding -> output embedding
+# modality_postprocessors, nn.ModuleDict, output embedding -> output embedding
+
+#! TODO: change this normalization: make sure done all the same to the rgb like
+def batch_min_max_normalize(batch_tensor):
+    # (batch, 3, h, w) -> Normalize each batch individually
+    batch_min = batch_tensor.view(batch_tensor.size(0), -1).min(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+    batch_max = batch_tensor.view(batch_tensor.size(0), -1).max(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+    normalized_batch = (batch_tensor - batch_min) / (batch_max - batch_min + 1e-5)  # Add epsilon for stability
+    return normalized_batch
+
+def per_image_normalize(batch_tensor, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
+    # Move mean and std to the same device as batch_tensor
+    mean = torch.tensor(mean, device=batch_tensor.device).view(3, 1, 1)
+    std = torch.tensor(std, device=batch_tensor.device).view(3, 1, 1)
+    
+    # Normalize each image in the batch independently
+    normalized_batch = torch.empty_like(batch_tensor)
+    for i in range(batch_tensor.size(0)):  # Loop over each image in the batch
+        normalized_batch[i] = (batch_tensor[i] - mean) / std
+    return normalized_batch
 
 class ContrastiveTransformations:
     def __init__(self, base_transforms, n_views=2):
@@ -68,8 +145,20 @@ class ImageBindTrain(L.LightningModule):
             "Linear probing stores params in lora_checkpoint_dir"
         self.save_hyperparameters()
 
+
+        self.autoencoder = AutoEncoder(in_dim=6, out_dim=3)
+        # self.autoencoder = load_and_freeze_model(self.autoencoder, '/eastdata/multi_percep_epoch99.ckpt')
+        self.rgb_like_normalize = transforms.Compose([
+            ## this is for the same method when saving the png
+                # batch_min_max_normalize,
+                resize_pad_batch,
+                per_image_normalize])
+
         # Load full pretrained ImageBind model
         self.model = imagebind_model.imagebind_huge(pretrained=True)
+        self.rgbGAN = rgbGANLoss(gan_k=6, lr=1e-3, in_channel=3)
+        self.loss_functions = {}
+        self.configure_loss()
         
         # apply event layer
         eventmodel=EventModel()
@@ -148,9 +237,29 @@ class ImageBindTrain(L.LightningModule):
         return [optimizer], [lr_scheduler]
 
     def info_nce_loss(self, batch, mode="train"):
-        data_a, class_a, data_b, class_b = batch
+        data_a, class_a, data_b, class_b, random_rgb = batch
 
-        # class_a is always "vision" according to ImageBind
+        rgb_like= self.autoencoder(data_b)
+        rgb_like = self.rgb_like_normalize(rgb_like)
+        
+        # data_a is grayscale, data_b is voxel, random_rgb is rgb
+        loss, loss_dict = calculate_loss(
+            rgb_like,
+            random_rgb,
+            data_a,
+            loss_strs=['rgb_gan', 'kernel', 'channels_distinctive', 'perceptual'],
+            loss_weights={'alpha_rgb_gan': 1, 'alpha_kernel': 1, 'alpha_distinct': 1, 'alpha_perceptual': 1},
+            loss_functions=self.loss_functions
+        )
+        self.log('rgb_like_loss', loss.cpu().detach().item(), logger=True, on_step=True, sync_dist=True)
+        self.log_dict(loss_dict, logger=True, on_step=True, sync_dist=True)
+        
+        
+        loss = torch.sigmoid(torch.log(loss+1e-8))
+        
+        
+        
+                # class_a is always "vision" according to ImageBind
         # feats_a = [self.model({class_a[0]: data_a_i.unsqueeze(0)}) for data_a_i in data_a]
         # feats_a_tensor = torch.cat([list(dict_.values())[0] for dict_ in feats_a], dim=0)
         with torch.no_grad():
@@ -211,6 +320,8 @@ class ImageBindTrain(L.LightningModule):
 
         self.log(mode + "_loss", dual_nll, prog_bar=True,
                  on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+        
+        dual_nll += loss
         return dual_nll
 
     def training_step(self, batch, batch_idx):
@@ -232,7 +343,20 @@ class ImageBindTrain(L.LightningModule):
             # Save postprocessors & heads
             save_module(self.model.modality_heads, module_name="heads",
                         checkpoint_dir=self.hparams.lora_checkpoint_dir)
-
+    
+    def configure_loss(self):
+        loss_list = self.config['loss']
+        for loss_str in loss_list:
+            if loss_str == 'rgb_gan':
+                self.loss_functions['rgb_gan'] = self.rgbGAN
+            elif loss_str=='kernel':
+                self.loss_functions['kernel'] = calculate_gradient_smoothness_loss_2d
+            elif loss_str=='channels_distinctive':
+                self.loss_functions['channels_distinctive'] = channels_distinctive_loss
+            elif loss_str=='perceptual':
+                self.loss_functions['perceptual'] = vgg_perceptual_loss
+            else:
+                raise ValueError(f'Invalid loss type {loss_str}!')
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train the ImageBind model with PyTorch Lightning and LoRA.")
