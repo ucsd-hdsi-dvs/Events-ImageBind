@@ -48,6 +48,7 @@ LOG_ON_STEP = True
 LOG_ON_EPOCH = True
 
 
+
 def resize_pad_batch(frames, size=224):
     """
     Resize a batch of frames such that the longer side of each frame is 224 pixels, 
