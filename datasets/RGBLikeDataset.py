@@ -164,4 +164,6 @@ class RGBLikeDataset(Dataset):
 
         random_rgb = self.imagenet_transform(random_rgb)
         
-        return image_units[0], model_mod.ModalityType.VISION, voxel, model_mod.ModalityType.EVENT, random_rgb
+        gray_images = self.transform(data_packet['frames'])  # [2, H, W]
+        
+        return image_units[0], model_mod.ModalityType.VISION, voxel, model_mod.ModalityType.EVENT, random_rgb, gray_images

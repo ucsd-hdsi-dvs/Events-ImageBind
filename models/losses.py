@@ -230,7 +230,7 @@ def calculate_gradient_smoothness_loss_2d(event_volume):
 #     reg_loss = torch.sum(torch.abs(rgb * background_mask))
 #     return reg_loss
 
-def calculate_loss(rgb_like, random_rgb, images, loss_strs, loss_weights, loss_functions):
+def calculate_loss(rgb_like, random_rgb, images, loss_strs, loss_weights, loss_functions, mode):
     loss_dict = {}
     loss = 0
 
@@ -269,7 +269,7 @@ def calculate_loss(rgb_like, random_rgb, images, loss_strs, loss_weights, loss_f
     #     loss_dict['gan_dis_loss'] = gan_dis_loss
 
     if 'rgb_gan' in loss_strs:
-        rgb_gan_loss, rgb_gan_dis_loss = loss_functions['rgb_gan'](rgb_like, random_rgb)
+        rgb_gan_loss, rgb_gan_dis_loss = loss_functions['rgb_gan'](rgb_like, random_rgb, mode)
         loss += loss_weights['alpha_rgb_gan'] * rgb_gan_loss
         loss_dict['rgb_gan_loss'] = rgb_gan_loss.detach()
         loss_dict['rgb_gan_dis_loss'] = rgb_gan_dis_loss

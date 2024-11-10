@@ -237,19 +237,21 @@ class ImageBindTrain(L.LightningModule):
         return [optimizer], [lr_scheduler]
 
     def info_nce_loss(self, batch, mode="train"):
-        data_a, class_a, data_b, class_b, random_rgb = batch
+        data_a, class_a, data_b, class_b, random_rgb, gray_scale = batch
 
         rgb_like= self.autoencoder(data_b)
         rgb_like = self.rgb_like_normalize(rgb_like)
+        data_b = rgb_like
         
         # data_a is grayscale, data_b is voxel, random_rgb is rgb
         loss, loss_dict = calculate_loss(
             rgb_like,
             random_rgb,
-            data_a,
+            gray_scale,
             loss_strs=['rgb_gan', 'kernel', 'channels_distinctive', 'perceptual'],
             loss_weights={'alpha_rgb_gan': 1, 'alpha_kernel': 1, 'alpha_distinct': 1, 'alpha_perceptual': 1},
-            loss_functions=self.loss_functions
+            loss_functions=self.loss_functions,
+            mode=mode
         )
         self.log('rgb_like_loss', loss.cpu().detach().item(), logger=True, on_step=True, sync_dist=True)
         self.log_dict(loss_dict, logger=True, on_step=True, sync_dist=True)
@@ -345,7 +347,7 @@ class ImageBindTrain(L.LightningModule):
                         checkpoint_dir=self.hparams.lora_checkpoint_dir)
     
     def configure_loss(self):
-        loss_list = self.config['loss']
+        loss_list = ['rgb_gan', 'kernel', 'channels_distinctive', 'perceptual']
         for loss_str in loss_list:
             if loss_str == 'rgb_gan':
                 self.loss_functions['rgb_gan'] = self.rgbGAN

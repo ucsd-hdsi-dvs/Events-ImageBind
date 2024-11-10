@@ -119,7 +119,7 @@ class GANLoss(nn.Module):
 class rgbGANLoss(nn.Module):
     def __init__(self, gan_k, in_channel=3, eps=1e-8, lr=1e-5, weight_decay=1e-5) -> None:
         super(rgbGANLoss, self).__init__()
-        self.gan_k = gan_k        
+        self.gan_k = gan_k  
         self.discriminator = Discriminator(in_channels=in_channel)
         self.d_optimizer = optim.Adam(
             self.discriminator.parameters(), betas=(0, 0.9), eps=eps, lr=lr, weight_decay=weight_decay
@@ -127,30 +127,34 @@ class rgbGANLoss(nn.Module):
 
         self.lr_scheduler = torch.optim.lr_scheduler.StepLR(self.d_optimizer , 5, .5)
 
-    def forward(self, fake, real):
+    def forward(self, fake, real, train_mode):
         fake_detached = fake.detach()
         
         real_labels = torch.ones(real.shape[0], 2).to(fake.device)  # Real labels are 1
         fake_labels = torch.zeros(fake.shape[0], 2).to(fake.device)  # Fake labels are 0
         real_labels_for_fake = torch.ones(fake.shape[0], 2).to(fake.device)  # Real labels are 1
         
-
-        self.discriminator.train()
         total_loss_d = 0
+        if train_mode=='train':
+            self.discriminator.train()
+            for _ in range(self.gan_k):
+                self.d_optimizer.zero_grad()
+                # Calculate the discriminator losses for real and fake
+                fake_out = self.discriminator(fake_detached)
+                real_out = self.discriminator(real)
+                losses_d = F.binary_cross_entropy_with_logits(fake_out, fake_labels) + \
+                           F.binary_cross_entropy_with_logits(real_out, real_labels)
+                losses_d.backward()
+                self.d_optimizer.step()
+                total_loss_d += losses_d.item()
+        else:
+            self.discriminator.eval()
 
-        for _ in range(self.gan_k):
-            self.d_optimizer.zero_grad()
-            # Calculate the discriminator losses for each fake and real image channel
-            fake_out = self.discriminator(fake_detached)
-            real_out = self.discriminator(real)
-            losses_d = F.binary_cross_entropy_with_logits(fake_out, fake_labels) + F.binary_cross_entropy_with_logits(real_out, real_labels)
-            losses_d.backward()
-            self.d_optimizer.step()
-            total_loss_d += losses_d.item()
-
-        self.discriminator.eval()
-        d_fake_probs = self.discriminator(fake)
+        # Evaluate generator loss without affecting discriminator parameters
+        with torch.no_grad():
+            d_fake_probs = self.discriminator(fake)
         loss_g = F.binary_cross_entropy_with_logits(d_fake_probs, real_labels_for_fake)
+        
         return loss_g, total_loss_d
 
 
