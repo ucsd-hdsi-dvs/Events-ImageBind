@@ -128,7 +128,11 @@ class RGBLikeDataset(Dataset):
         self.event_frame_normalize = transforms.Compose([
                 resize_pad,
                 transforms.Normalize([0.153, 0.153, 0.153], [0.165, 0.165, 0.165])])
-        
+
+        self.gray_transform = transforms.Compose([
+            lambda x: torch.from_numpy(x).float() / 255,  # Convert to float and scale
+            transforms.Normalize(mean=[0.5], std=[0.5])  # Normalize data
+        ])
     
     def __len__(self):
         return len(self.data_paths)
@@ -164,6 +168,6 @@ class RGBLikeDataset(Dataset):
 
         random_rgb = self.imagenet_transform(random_rgb)
         
-        gray_images = self.transform(data_packet['frames'])  # [2, H, W]
+        gray_images = self.gray_transform(data_packet['frames'])  # [2, H, W]
         
         return image_units[0], model_mod.ModalityType.VISION, voxel, model_mod.ModalityType.EVENT, random_rgb, gray_images
