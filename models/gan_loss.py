@@ -140,12 +140,18 @@ class rgbGANLoss(nn.Module):
             for _ in range(self.gan_k):
                 self.d_optimizer.zero_grad()
                 # Calculate the discriminator losses for real and fake
+                #!TODO: fix this error
+                torch.use_deterministic_algorithms(False)  # Disable determinism temporarily
                 fake_out = self.discriminator(fake_detached)
                 real_out = self.discriminator(real)
                 losses_d = F.binary_cross_entropy_with_logits(fake_out, fake_labels) + \
                            F.binary_cross_entropy_with_logits(real_out, real_labels)
+                # this losses_d is the cause of the error 
+                # torch.use_deterministic_algorithms(True, warn_only=True)
                 losses_d.backward()
                 self.d_optimizer.step()
+                #!TODO: fix this error
+                torch.use_deterministic_algorithms(True)  # Re-enable determinism
                 total_loss_d += losses_d.item()
         else:
             self.discriminator.eval()
