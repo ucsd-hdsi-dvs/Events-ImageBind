@@ -240,9 +240,7 @@ class ImageBindTrain(L.LightningModule):
         data_a, class_a, data_b, class_b, random_rgb, gray_scale = batch
 
         rgb_like= self.autoencoder(data_b)
-        rgb_like = self.rgb_like_normalize(rgb_like)
-        data_b = rgb_like
-        
+
         # data_a is grayscale, data_b is voxel, random_rgb is rgb
         loss, loss_dict = calculate_loss(
             rgb_like,
@@ -256,9 +254,9 @@ class ImageBindTrain(L.LightningModule):
         self.log('rgb_like_loss', loss.cpu().detach().item(), logger=True, on_step=True, sync_dist=True)
         self.log_dict(loss_dict, logger=True, on_step=True, sync_dist=True)
         
-        
         loss = torch.sigmoid(torch.log(loss+1e-8))
-        
+        rgb_like = self.rgb_like_normalize(rgb_like)
+        data_b = rgb_like
         
         
                 # class_a is always "vision" according to ImageBind
