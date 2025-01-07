@@ -9,6 +9,8 @@ from torchvision import transforms
 import pickle as pkl
 import os.path as op
 import numpy as np
+from PIL import Image
+import json
 import cv2
 import random
 from datasets.utils.events_utils import gen_discretized_event_volume
@@ -143,3 +145,62 @@ class RGBLikeDataset(Dataset):
         image_units=torch.stack([image_units[:-1],image_units[1:]],dim=2) # 1, 3,2, 224, 224
         
         return image_units[0], model_mod.ModalityType.VISION, voxel, model_mod.ModalityType.EVENT
+
+
+
+
+class RGBLikeCaltech(Dataset):
+    def __init__ (self, data_root, mode, transform=None, frame_size=(180,240), num_bins=6):
+        self.frame_size = frame_size
+        self.num_bins = num_bins
+        self.transform = transforms.Compose([
+            # Resize the image so that the smaller side is at least 180 pixels, maintaining aspect ratio
+            transforms.Resize(180),
+            # Crop the central part of the image to exactly 180x240
+            transforms.CenterCrop((180, 240)),
+            # Converts to tensor for PyTorch
+            transforms.ToTensor(),
+            # Normalize using ImageNet mean and standard deviation
+            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        ])        
+        with open(data_root, 'r') as f:
+            paths = json.load(f)
+        train_paths, test_paths = train_test_split(paths, test_size=0.2, random_state=42)
+        if mode == 'train':
+            self.data_root = train_paths
+        elif mode == 'test':
+            self.data_root = test_paths
+
+    def __len__(self):
+        return len(self.data_root)
+    
+    def __getitem__(self, idx):
+        data_path = self.data_paths[idx]
+
+        data= np.load(data_path)
+        events = {key: data[key].astype(np.float32) for key in data.files}
+        
+        voxel = gen_discretized_event_volume(events, [self.num_bins, *self.frame_size])
+
+        rgb_path = convert_path(data_path)
+        
+        rgb = Image.open(rgb_path).convert('RGB')
+        rgb = self.transform(rgb)
+        
+        
+        return rgb, model_mod.ModalityType.VISION, voxel, model_mod.ModalityType.EVENT
+
+
+
+def convert_path(npz_path):
+
+    new_base = "/eastdata/datasets/Caltech101/101_ObjectCategories"
+    parts = npz_path.split('/')
+
+    category = parts[-2]  
+    file_name = parts[-1] 
+    
+    new_file_name = file_name.replace('.npz', '.jpg')
+    new_path = os.path.join(new_base, category, new_file_name)
+    
+    return new_path

@@ -241,7 +241,7 @@ def parse_args():
     # parser.add_argument("--datasets_dir", type=str, default="./.datasets",
     #                     help="Directory containing the datasets")
     parser.add_argument("--load_vision_to_event", action="store_true", help="Load vision to event layers")
-    parser.add_argument("--datasets", type=str, nargs="+", default=["rgb_like"], choices=["dreambooth","event","mvsce"],
+    parser.add_argument("--datasets", type=str, nargs="+", default=["rgb_like_caltech"], choices=["dreambooth","event","mvsce"],
                         help="Datasets to use for training and validation")
     parser.add_argument("--full_model_checkpoint_dir", type=str, default="./.checkpoints/full",
                         help="Directory to save the full model checkpoints")
@@ -352,7 +352,13 @@ if __name__ == "__main__":
         from datasets.RGBLikeDataset import RGBLikeDataset
         train_datasets.append(RGBLikeDataset(data_root='/eastdata/datasets/MVSEC/', mode='train'))
         test_datasets.append(RGBLikeDataset(data_root='/eastdata/datasets/MVSEC/', mode= 'test'))
-        
+
+
+    if "rgb_like_caltech" in args.datasets:
+        from datasets.RGBLikeDataset import RGBLikeCaltech
+        train_datasets.append(RGBLikeCaltech(data_root='/eastdata/datasets/N-Caltech101/paths.json', mode='train'))
+        test_datasets.append(RGBLikeCaltech(data_root='/eastdata/datasets/N-Caltech101/paths.json', mode= 'test'))
+
     # add event dataset
     if len(args.datasets) == 1:
         train_dataset = train_datasets[0]
