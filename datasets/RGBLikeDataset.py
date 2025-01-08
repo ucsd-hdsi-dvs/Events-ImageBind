@@ -154,15 +154,11 @@ class RGBLikeCaltech(Dataset):
         self.frame_size = frame_size
         self.num_bins = num_bins
         self.transform = transforms.Compose([
-            # Resize the image so that the smaller side is at least 180 pixels, maintaining aspect ratio
-            transforms.Resize(180),
-            # Crop the central part of the image to exactly 180x240
-            transforms.CenterCrop((180, 240)),
-            # Converts to tensor for PyTorch
             transforms.ToTensor(),
-            # Normalize using ImageNet mean and standard deviation
+            resize_pad,
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])        
+        ])   
+
         with open(data_root, 'r') as f:
             paths = json.load(f)
         train_paths, test_paths = train_test_split(paths, test_size=0.2, random_state=42)
@@ -185,11 +181,12 @@ class RGBLikeCaltech(Dataset):
         rgb_path = convert_path(data_path)
         
         rgb = Image.open(rgb_path).convert('RGB')
+        
         rgb = self.transform(rgb)
         rgb = rgb.unsqueeze(1)
         rgb = rgb.repeat(1, 2, 1, 1)
         
-        
+        # print('rgb, voxel', rgb.shape, voxel.shape)
         return rgb, model_mod.ModalityType.VISION, voxel, model_mod.ModalityType.EVENT
 
 
