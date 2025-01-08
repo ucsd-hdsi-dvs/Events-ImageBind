@@ -18,3 +18,5 @@ cartopy
 safetensors
 lightning==2.0.2
 scikit-learn
+wandb==0.18.2
+numpy<2
