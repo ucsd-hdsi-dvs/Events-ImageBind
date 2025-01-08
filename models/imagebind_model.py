@@ -210,7 +210,7 @@ class ImageBindModel(nn.Module):
         self.autoencoder = load_and_freeze_model(self.autoencoder, '/eastdata/datasets/N-Caltech101/sobel.ckpt')
         self.rgb_like_normalize = transforms.Compose([
             ## this is for the same method when saving the png
-                batch_min_max_normalize,
+                # batch_min_max_normalize,
                 resize_pad_batch,
                 per_image_normalize])
 
