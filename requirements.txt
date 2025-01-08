@@ -18,5 +18,3 @@ cartopy
 safetensors
 lightning==2.0.2
 scikit-learn
-pydantic==1.8.2
-
