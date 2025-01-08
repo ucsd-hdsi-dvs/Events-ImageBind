@@ -141,8 +141,8 @@ class RGBLikeDataset(Dataset):
             image=self.event_frame_normalize(image)
             image_units.append(image)
         
-        image_units=torch.stack(image_units) # 2, 3, 224, 224
-        image_units=torch.stack([image_units[:-1],image_units[1:]],dim=2) # 1, 3,2, 224, 224
+        image_units=torch.stack(image_units) 
+        image_units=torch.stack([image_units[:-1],image_units[1:]],dim=2) 
         
         return image_units[0], model_mod.ModalityType.VISION, voxel, model_mod.ModalityType.EVENT
 
@@ -186,6 +186,8 @@ class RGBLikeCaltech(Dataset):
         
         rgb = Image.open(rgb_path).convert('RGB')
         rgb = self.transform(rgb)
+        rgb = rgb.unsqueeze(1)
+        rgb = rgb.repeat(1, 2, 1, 1)
         
         
         return rgb, model_mod.ModalityType.VISION, voxel, model_mod.ModalityType.EVENT
