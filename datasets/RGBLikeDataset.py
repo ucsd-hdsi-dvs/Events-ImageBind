@@ -175,7 +175,7 @@ class RGBLikeCaltech(Dataset):
         return len(self.data_root)
     
     def __getitem__(self, idx):
-        data_path = self.data_paths[idx]
+        data_path = self.data_root[idx]
 
         data= np.load(data_path)
         events = {key: data[key].astype(np.float32) for key in data.files}
