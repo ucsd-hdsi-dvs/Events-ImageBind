@@ -207,7 +207,7 @@ class ImageBindModel(nn.Module):
         )
         
         self.autoencoder = AutoEncoder(in_dim=6, out_dim=3, relu=False)
-        self.autoencoder = load_and_freeze_model(self.autoencoder, '/eastdata/datasets/N-Caltech101/sobel.ckpt')
+        self.autoencoder = load_and_freeze_model(self.autoencoder, '/eastdata/datasets/N-Caltech101/upsample.ckpt')
         self.rgb_like_normalize = transforms.Compose([
             ## this is for the same method when saving the png
                 # batch_min_max_normalize,
