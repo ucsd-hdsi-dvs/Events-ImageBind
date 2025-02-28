@@ -14,7 +14,7 @@ import json
 import cv2
 import random
 from datasets.utils.events_utils import gen_discretized_event_volume
-from data import *
+from data import load_and_transform_text
 
 from tqdm import tqdm
 from numpy_groupies import aggregate
@@ -173,7 +173,10 @@ class RGBLikeCaltech(Dataset):
 
         
         train_paths, test_paths = process_file_paths(eventbind_train), process_file_paths(eventbind_val)
-        self.classnames_dict=json.load('/eastdata/datasets/N-Caltech101/Caltech101_classnames.json')
+        
+        # Open the file and load its contents
+        with open('/eastdata/datasets/N-Caltech101/Caltech101_classnames.json', 'r') as file:
+            self.classnames_dict= json.load(file)
             
         if mode == 'train':
             self.data_root, self.frame_root = train_paths[0], train_paths[1]
