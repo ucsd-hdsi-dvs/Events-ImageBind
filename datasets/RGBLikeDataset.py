@@ -14,7 +14,7 @@ import json
 import cv2
 import random
 from datasets.utils.events_utils import gen_discretized_event_volume
-from data import load_and_transform_text
+from data import load_and_transform_text_no_device
 
 from tqdm import tqdm
 from numpy_groupies import aggregate
@@ -190,8 +190,10 @@ class RGBLikeCaltech(Dataset):
         data_path = self.data_root[idx]
         rgb_path = self.frame_root[idx]
         label_str=data_path.split('/')[-2]
-        label_str= 'A sketch image of a' + label_str
-        label_str=load_and_transform_text(label_str)
+        label_str= 'A sketch image of a ' + label_str
+        label_str=load_and_transform_text_no_device([label_str])
+        # print('shape of label_str', label_str.shape)
+        label_str=label_str.squeeze(0)
         # label_idx = int(self.classnames_dict[label_str])
         
         # read a png file

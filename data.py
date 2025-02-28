@@ -125,6 +125,15 @@ def load_and_transform_text(text, device):
     return tokens
 
 
+def load_and_transform_text_no_device(text):
+    if text is None:
+        return None
+    tokenizer = SimpleTokenizer(bpe_path=BPE_PATH)
+    tokens = [tokenizer(t).unsqueeze(0) for t in text]
+    tokens = torch.cat(tokens, dim=0)
+    return tokens
+
+
 def load_and_transform_audio_data(
     audio_paths,
     device,
