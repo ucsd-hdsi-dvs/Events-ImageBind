@@ -38,54 +38,54 @@ ModalityType = SimpleNamespace(
     EVENT="event",
 )
 
-def resize_pad_batch(frames, size=224):
-    """
-    Resize a batch of frames such that the longer side of each frame is 224 pixels, 
-    and pad the shorter side to make it square (224x224).
+# def resize_pad_batch(frames, size=224):
+#     """
+#     Resize a batch of frames such that the longer side of each frame is 224 pixels, 
+#     and pad the shorter side to make it square (224x224).
     
-    Parameters:
-        frames (torch.Tensor): Input tensor of shape (b, c, h, w).
-        size (int): New size for the longer side of each frame and the size to pad to.
+#     Parameters:
+#         frames (torch.Tensor): Input tensor of shape (b, c, h, w).
+#         size (int): New size for the longer side of each frame and the size to pad to.
         
-    Returns:
-        torch.Tensor: The batch of resized and padded frames.
-    """
+#     Returns:
+#         torch.Tensor: The batch of resized and padded frames.
+#     """
 
-    # Define the batch, channels, height, and width
-    b, c, h, w = frames.shape
+#     # Define the batch, channels, height, and width
+#     b, c, h, w = frames.shape
 
-    # Get longer side for each frame
-    longer_side = max(h, w)
+#     # Get longer side for each frame
+#     longer_side = max(h, w)
 
-    # Calculate the resize ratio
-    ratio = size / longer_side
+#     # Calculate the resize ratio
+#     ratio = size / longer_side
 
-    # Resize transformation
-    resize_transform = transforms.Resize((int(h * ratio), int(w * ratio)))
+#     # Resize transformation
+#     resize_transform = transforms.Resize((int(h * ratio), int(w * ratio)))
 
-    # Apply resize to each image in the batch
-    resized_frames = torch.stack([resize_transform(frame) for frame in frames])
+#     # Apply resize to each image in the batch
+#     resized_frames = torch.stack([resize_transform(frame) for frame in frames])
 
-    # Get new height and width after resize
-    _, _, new_h, new_w = resized_frames.shape
+#     # Get new height and width after resize
+#     _, _, new_h, new_w = resized_frames.shape
 
-    # Calculate padding
-    pad_height = (size - new_h) if new_h < size else 0
-    pad_width = (size - new_w) if new_w < size else 0
+#     # Calculate padding
+#     pad_height = (size - new_h) if new_h < size else 0
+#     pad_width = (size - new_w) if new_w < size else 0
 
-    # Calculate padding for each side to center the image
-    pad_top = pad_height // 2
-    pad_bottom = pad_height - pad_top
-    pad_left = pad_width // 2
-    pad_right = pad_width - pad_left
+#     # Calculate padding for each side to center the image
+#     pad_top = pad_height // 2
+#     pad_bottom = pad_height - pad_top
+#     pad_left = pad_width // 2
+#     pad_right = pad_width - pad_left
 
-    # Padding transformation
-    padding_transform = transforms.Pad(padding=(pad_left, pad_top, pad_right, pad_bottom), fill=0, padding_mode='constant')
+#     # Padding transformation
+#     padding_transform = transforms.Pad(padding=(pad_left, pad_top, pad_right, pad_bottom), fill=0, padding_mode='constant')
 
-    # Apply padding to each resized frame
-    padded_frames = torch.stack([padding_transform(frame) for frame in resized_frames])
+#     # Apply padding to each resized frame
+#     padded_frames = torch.stack([padding_transform(frame) for frame in resized_frames])
 
-    return padded_frames
+#     return padded_frames
 
 
 # modality_preprocessors, nn.ModuleDict, preprocessors for each modality
@@ -94,23 +94,23 @@ def resize_pad_batch(frames, size=224):
 # modality_postprocessors, nn.ModuleDict, output embedding -> output embedding
 
 #! TODO: change this normalization: make sure done all the same to the rgb like
-def batch_min_max_normalize(batch_tensor):
-    # (batch, 3, h, w) -> Normalize each batch individually
-    batch_min = batch_tensor.view(batch_tensor.size(0), -1).min(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
-    batch_max = batch_tensor.view(batch_tensor.size(0), -1).max(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
-    normalized_batch = (batch_tensor - batch_min) / (batch_max - batch_min + 1e-5)  # Add epsilon for stability
-    return normalized_batch
+# def batch_min_max_normalize(batch_tensor):
+#     # (batch, 3, h, w) -> Normalize each batch individually
+#     batch_min = batch_tensor.view(batch_tensor.size(0), -1).min(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+#     batch_max = batch_tensor.view(batch_tensor.size(0), -1).max(dim=1, keepdim=True)[0].view(-1, 1, 1, 1)
+#     normalized_batch = (batch_tensor - batch_min) / (batch_max - batch_min + 1e-5)  # Add epsilon for stability
+#     return normalized_batch
 
-def per_image_normalize(batch_tensor, mean=[0.153, 0.153, 0.153], std=[0.165, 0.165, 0.165]):
-    # Move mean and std to the same device as batch_tensor
-    mean = torch.tensor(mean, device=batch_tensor.device).view(3, 1, 1)
-    std = torch.tensor(std, device=batch_tensor.device).view(3, 1, 1)
+# def per_image_normalize(batch_tensor, mean=[0.153, 0.153, 0.153], std=[0.165, 0.165, 0.165]):
+#     # Move mean and std to the same device as batch_tensor
+#     mean = torch.tensor(mean, device=batch_tensor.device).view(3, 1, 1)
+#     std = torch.tensor(std, device=batch_tensor.device).view(3, 1, 1)
     
-    # Normalize each image in the batch independently
-    normalized_batch = torch.empty_like(batch_tensor)
-    for i in range(batch_tensor.size(0)):  # Loop over each image in the batch
-        normalized_batch[i] = (batch_tensor[i] - mean) / std
-    return normalized_batch
+#     # Normalize each image in the batch independently
+#     normalized_batch = torch.empty_like(batch_tensor)
+#     for i in range(batch_tensor.size(0)):  # Loop over each image in the batch
+#         normalized_batch[i] = (batch_tensor[i] - mean) / std
+#     return normalized_batch
 
 class ImageBindModel(nn.Module):
     def __init__(
@@ -206,13 +206,13 @@ class ImageBindModel(nn.Module):
             out_embed_dim
         )
         
-        self.autoencoder = AutoEncoder(in_dim=6, out_dim=3, relu=False)
-        self.autoencoder = load_and_freeze_model(self.autoencoder, '/eastdata/datasets/N-Caltech101/upsample.ckpt')
-        self.rgb_like_normalize = transforms.Compose([
-            ## this is for the same method when saving the png
-                # batch_min_max_normalize,
-                resize_pad_batch,
-                per_image_normalize])
+        # self.autoencoder = AutoEncoder(in_dim=20, out_dim=3)
+        # self.autoencoder = load_and_freeze_model(self.autoencoder, '/eastdata/datasets/N-Caltech101/upsample.ckpt')
+        # self.rgb_like_normalize = transforms.Compose([
+        #     ## this is for the same method when saving the png
+        #         # batch_min_max_normalize,
+        #         resize_pad_batch,
+        #         per_image_normalize])
 
     # preprocessors for each modality
     # image (1,3,224,224) or (1,3,2,224,224) ->[1, 257, 1024]
@@ -556,9 +556,9 @@ class ImageBindModel(nn.Module):
     def forward(self, inputs):
         outputs = {}
         for modality_key, modality_value in inputs.items():
-            if modality_key == ModalityType.EVENT:
-                rgb_like, recon = self.autoencoder(modality_value)
-                modality_value = self.rgb_like_normalize(rgb_like)
+            # if modality_key == ModalityType.EVENT:
+            #     rgb_like = self.autoencoder(modality_value)
+            #     modality_value = self.rgb_like_normalize(rgb_like)
 
             # reduce_list = (
             #     modality_value.ndim >= 5

@@ -37,7 +37,7 @@ from models import imagebind_model
 from models import lora as LoRA
 from models.imagebind_model import ModalityType, load_module, save_module
 from models.events import EventModel
-
+import json
 logging.basicConfig(level=logging.INFO, force=True)
 
 # Logging settings
@@ -70,7 +70,8 @@ class ImageBindTrain(L.LightningModule):
 
         # Load full pretrained ImageBind model
         self.model = imagebind_model.imagebind_huge(pretrained=True)
-        
+
+        self.use_txt=True
         # apply event layer
         eventmodel=EventModel()
         eventmodel.apply_event_layers(self.model, load_vision_to_event)
@@ -148,13 +149,16 @@ class ImageBindTrain(L.LightningModule):
         return [optimizer], [lr_scheduler]
 
     def info_nce_loss(self, batch, mode="train"):
-        data_a, class_a, data_b, class_b = batch
+        data_a, class_a, data_b, class_b, data_c, class_c = batch
+        
 
         # class_a is always "vision" according to ImageBind
         # feats_a = [self.model({class_a[0]: data_a_i.unsqueeze(0)}) for data_a_i in data_a]
         # feats_a_tensor = torch.cat([list(dict_.values())[0] for dict_ in feats_a], dim=0)
         with torch.no_grad():
             feats_a_tensor=list(self.model({class_a[0]: data_a}).values())[0]
+            if self.use_txt:
+                feats_c_tensor=list(self.model({class_c[0]: data_c}).values())[0]
 
         # class_b could be any modality
         # feats_b = [self.model({class_b[idx]: data_b_i.unsqueeze(0)}) for idx, data_b_i in enumerate(data_b)]
@@ -167,12 +171,16 @@ class ImageBindTrain(L.LightningModule):
             feats_tensors = [feats_a_tensor, feats_a_b_tensor]
             temperatures = [1, self.hparams.temperature]
             contrast = ["self", "cross"]
+            
+            # not implemented yet
+            raise NotImplementedError("Self-contrastive loss not implemented yet")
+            
         else:
             feats_a_b_tensor = torch.cat([feats_a_tensor, feats_b_tensor], dim=0)
             feats_tensors = [feats_a_b_tensor]
             temperatures = [self.hparams.temperature]
             contrast = ["cross"]
-        
+
         # Accumulate self-contrastive loss for image and its augmentation, and modailty with image
         dual_nll = False
         for feats_idx, feats_tensor in enumerate(feats_tensors):
@@ -202,15 +210,54 @@ class ImageBindTrain(L.LightningModule):
             )
             sim_argsort = comb_sim.argsort(dim=-1, descending=True).argmin(dim=-1)
             # Logging ranking metrics
-            self.log(mode + "_acc_top1", (sim_argsort == 0).float().mean(), prog_bar=True,
+            self.log(mode + "_acc_top1_ie", (sim_argsort == 0).float().mean(), prog_bar=True,
                      on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
-            self.log(mode + "_acc_top5", (sim_argsort < 5).float().mean(), prog_bar=True,
+            self.log(mode + "_acc_top5_ie", (sim_argsort < 5).float().mean(), prog_bar=True,
                      on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
-            self.log(mode + "_acc_mean_pos", 1 + sim_argsort.float().mean(), prog_bar=True,
+            self.log(mode + "_acc_top10_ie", (sim_argsort < 10).float().mean(), prog_bar=True,
+                     on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+            
+            self.log(mode + "_acc_mean_pos_ie", 1 + sim_argsort.float().mean(), prog_bar=True,
                      on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
 
         self.log(mode + "_loss", dual_nll, prog_bar=True,
                  on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+        
+        if self.use_txt and mode == "val":
+            feats_c_b_tensor = torch.cat([feats_c_tensor, feats_b_tensor], dim=0)
+            feats_tensors_c = [feats_c_b_tensor]
+            temperatures = [self.hparams.temperature]
+            contrast = ["cross"]
+            
+            for feats_idx, feats_tensor in enumerate(feats_tensors_c):
+                # Calculate cosine similarity
+                cos_sim = F.cosine_similarity(feats_tensor[:, None, :], feats_tensor[None, :, :], dim=-1)
+                # Mask out cosine similarity to itself
+                self_mask = torch.eye(cos_sim.shape[0], dtype=torch.bool, device=cos_sim.device)
+                cos_sim.masked_fill_(self_mask, -9e15)
+                # Find positive example -> batch_size//2 away from the original example
+                pos_mask = self_mask.roll(shifts=cos_sim.shape[0] // 2, dims=0)
+                # InfoNCE loss
+                cos_sim = cos_sim / temperatures[feats_idx]
+
+                # Get ranking position of positive example
+                comb_sim = torch.cat(
+                    [cos_sim[pos_mask][:, None], cos_sim.masked_fill(pos_mask, -9e15)],  # First position positive example
+                    dim=-1,
+                )
+                sim_argsort = comb_sim.argsort(dim=-1, descending=True).argmin(dim=-1)
+                # Logging ranking metrics
+                self.log(mode + "_acc_top1_te", (sim_argsort == 0).float().mean(), prog_bar=True,
+                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                self.log(mode + "_acc_top5_te", (sim_argsort < 5).float().mean(), prog_bar=True,
+                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                self.log(mode + "_acc_top10_te", (sim_argsort < 10).float().mean(), prog_bar=True,
+                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                
+                self.log(mode + "_acc_mean_pos_te", 1 + sim_argsort.float().mean(), prog_bar=True,
+                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+        
+        
         return dual_nll
 
     def training_step(self, batch, batch_idx):

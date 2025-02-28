@@ -14,6 +14,10 @@ import json
 import cv2
 import random
 from datasets.utils.events_utils import gen_discretized_event_volume
+from data import *
+
+from tqdm import tqdm
+from numpy_groupies import aggregate
 
 
 def resize_pad(frame, size=224):
@@ -150,7 +154,7 @@ class RGBLikeDataset(Dataset):
 
 
 class RGBLikeCaltech(Dataset):
-    def __init__ (self, data_root, mode, transform=None, frame_size=(180,240), num_bins=6):
+    def __init__ (self, data_root, mode, transform=None, frame_size=(224,224), num_bins=20):
         self.frame_size = frame_size
         self.num_bins = num_bins
         self.transform = transforms.Compose([
@@ -159,47 +163,162 @@ class RGBLikeCaltech(Dataset):
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])   
 
-        with open(data_root, 'r') as f:
-            paths = json.load(f)
-        train_paths, test_paths = train_test_split(paths, test_size=0.2, random_state=42)
+        # with open(data_root, 'r') as f:
+        #     paths = json.load(f)
+        # train_paths, test_paths = train_test_split(paths, test_size=0.2, random_state=42)
+        
+
+        eventbind_train = "/eastdata/datasets/N-Caltech101/Caltech101_train.txt"
+        eventbind_val = "/eastdata/datasets/N-Caltech101/Caltech101_val.txt"
+
+        
+        train_paths, test_paths = process_file_paths(eventbind_train), process_file_paths(eventbind_val)
+        self.classnames_dict=json.load('/eastdata/datasets/N-Caltech101/Caltech101_classnames.json')
+            
         if mode == 'train':
-            self.data_root = train_paths
+            self.data_root, self.frame_root = train_paths[0], train_paths[1]
         elif mode == 'test':
-            self.data_root = test_paths
+            self.data_root, self.frame_root = test_paths[0], test_paths[1]
 
     def __len__(self):
         return len(self.data_root)
     
     def __getitem__(self, idx):
         data_path = self.data_root[idx]
-
-        data= np.load(data_path)
-        events = {key: data[key].astype(np.float32) for key in data.files}
+        rgb_path = self.frame_root[idx]
+        label_str=data_path.split('/')[-2]
+        label_str= 'A sketch image of a' + label_str
+        label_str=load_and_transform_text(label_str)
+        # label_idx = int(self.classnames_dict[label_str])
         
-        voxel = gen_discretized_event_volume(events, [self.num_bins, *self.frame_size])
-
-        rgb_path = convert_path(data_path)
-        
+        # read a png file
+        FLER = Image.open(data_path).convert('RGB')
         rgb = Image.open(rgb_path).convert('RGB')
         
         rgb = self.transform(rgb)
-        rgb = rgb.unsqueeze(1)
-        rgb = rgb.repeat(1, 2, 1, 1)
+        # rgb = rgb.unsqueeze(1)
+        # rgb = rgb.repeat(1, 2, 1, 1)
+        
+        
+        FLER = self.transform(FLER)
         
         # print('rgb, voxel', rgb.shape, voxel.shape)
-        return rgb, model_mod.ModalityType.VISION, voxel, model_mod.ModalityType.EVENT
+        return rgb, model_mod.ModalityType.VISION, FLER, model_mod.ModalityType.EVENT, label_str, model_mod.ModalityType.TEXT
 
 
 
-def convert_path(npz_path):
+# def convert_path(npz_path):
 
-    new_base = "/eastdata/datasets/Caltech101/101_ObjectCategories"
-    parts = npz_path.split('/')
+#     new_base = "/eastdata/datasets/Caltech101/101_ObjectCategories"
+#     parts = npz_path.split('/')
 
-    category = parts[-2]  
-    file_name = parts[-1] 
+#     category = parts[-2]  
+#     file_name = parts[-1] 
     
-    new_file_name = file_name.replace('.npz', '.jpg')
-    new_path = os.path.join(new_base, category, new_file_name)
+#     new_file_name = file_name.replace('.npz', '.jpg')
+#     new_path = os.path.join(new_base, category, new_file_name)
     
-    return new_path
+#     return new_path
+
+def process_file_paths(file_path):
+    """
+    Reads the file at `file_path`, processes the bin and jpg file paths,
+    converts the bin paths to npz paths, and updates the jpg paths to a new format.
+
+    Args:
+    - file_path (str): Path to the input file containing bin and jpg file paths.
+
+    Returns:
+    - List: A list containing two lists: 
+        - The first list contains converted npz file paths.
+        - The second list contains converted jpg file paths.
+    """
+    # Read and process lines
+    with open(file_path, 'r') as file:
+        data = [line.strip().split('\t') for line in file]
+
+    # Extract bin and jpg file paths
+    bin_files = [item[0] for item in data]  # First column (bin paths)
+    jpg_files = [item[1] for item in data]  # Second column (jpg paths)
+
+    # Convert bin paths to npz paths
+    npz_files = [
+        f"/eastdata/datasets/imagebind_ncaltech101/{bin_path.split('/')[1]}/image_{bin_path.split('_')[-1]}"
+        .replace('.bin', '.png')
+        for bin_path in bin_files
+    ]
+
+    # Convert jpg paths to the new format
+    jpg_files_converted = [
+        f"/eastdata/datasets/Caltech101/101_ObjectCategories/{jpg_path.split('/')[1]}/{jpg_path.split('/')[-1]}"
+        for jpg_path in jpg_files
+    ]
+
+    return [npz_files, jpg_files_converted]
+
+
+def background_filter(events, frame_size=(260, 346), dt=70000):
+
+    """ Filter out the background events that are actually noise.
+        Works by looking at the time difference between an event and the temporally closest event in the past and in the future at the same xy pixel coordinates. If both of these delta times are smaller than a predefined threshold dt, treat this event as noise and remove it.
+    Args:
+        events: ndarray, shape:(ta, 4), the events stream
+        frame_size: tuple/list, (h, w), the frame size
+        dt: int, threshold of 'long time' in us.
+    Returns:
+        events_filtered: ndarray, shape: (?, 4), filtered events.
+    """
+    h, w = frame_size
+    ta = events.shape[0]
+    
+    # Arrays to store time deltas
+    deltaT_past = np.full(ta, np.inf)
+    deltaT_future = np.full(ta, np.inf)
+    
+    # Dictionary to track last and next timestamps for each pixel
+    lastTimesMap = np.full((w, h), -np.inf)
+    nextTimesMap = np.full((w, h), np.inf)
+    
+    # First pass: Calculate past deltas
+    for i in range(ta):
+        ts, xs, ys, ps = events[i]
+        if lastTimesMap[(xs, ys)] != -np.inf:
+            deltaT_past[i] = ts - lastTimesMap[(xs, ys)]
+        lastTimesMap[max(0, xs-2):min(w, xs+2), max(0, ys-2):min(h, ys+2)] = ts
+    
+    # Second pass: Calculate future deltas
+    for i in reversed(range(ta)):
+        ts, xs, ys, ps = events[i]
+        if nextTimesMap[(xs, ys)] != np.inf:
+            deltaT_future[i] = nextTimesMap[(xs, ys)] - ts
+        nextTimesMap[max(0, xs-2):min(w, xs+2), max(0, ys-2):min(h, ys+2)] = ts
+    
+    # Filter events based on both past and future deltas
+    valid_indices = (deltaT_past <=  dt) | (deltaT_future <= dt)
+    events_filtered = events[valid_indices]
+    
+    return events_filtered
+
+
+def hot_pixel_filter(events, frame_size=(260, 346), thres_percentile=99):
+    """ Filter out the Hot Pixels.
+        Hot pixels are defined as the pixels that record a number of event
+        bigger than threventhotpixel.
+    Args:
+        events: ndarray, shape:(ta, 4), the events stream
+        frame_size: tuple/list, (h, w), the frame size
+        thres_percentile: float, 0~100, threshold percentile of hot pixel.
+    Returns:
+        events_filtered: ndarray, shape: (?, 4), filtered events.
+    """
+    h, w = frame_size
+
+    hotpixelarray = aggregate(events[:, 1:3].T, np.ones_like(
+        events[:, 0]), func='sum', size=(w, h), fill_value=0)
+    threventhotpixel = np.percentile(hotpixelarray.flatten(), thres_percentile)
+    selindexarray = hotpixelarray >= threventhotpixel
+    [hpx, hpy] = np.nonzero(selindexarray.astype(int))
+    fs = np.array((hpx, hpy)).T
+
+    events_filtered = events[~(events[:, 1:3] == fs[:, None]).all(-1).any(axis=0)]
+    return events_filtered
