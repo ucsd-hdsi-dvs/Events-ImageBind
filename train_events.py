@@ -24,6 +24,7 @@ import lightning as L
 from lightning.pytorch import Trainer, seed_everything
 from lightning.pytorch.callbacks import ModelCheckpoint
 from lightning.pytorch import loggers as pl_loggers
+# from pytorch_lightning.utilities.model_summary import ModelSummary
 
 import torch
 import torch.nn.functional as F
@@ -43,6 +44,13 @@ logging.basicConfig(level=logging.INFO, force=True)
 # Logging settings
 LOG_ON_STEP = True
 LOG_ON_EPOCH = True
+
+
+def get_param_size(module):
+    total_params = sum(p.numel() for p in module.parameters())
+    dtype_size = next(module.parameters()).element_size()  # Bytes per element
+    memory_size = total_params * dtype_size / (1024 ** 2)  # Convert to MB
+    return total_params, memory_size
 
 
 class ContrastiveTransformations:
@@ -88,58 +96,105 @@ class ImageBindTrain(L.LightningModule):
         
         for modality_preprocessor in self.model.modality_preprocessors.children():
             modality_preprocessor.requires_grad_(False)
+            
+        for modality_head in self.model.modality_heads.children():
+            modality_head.requires_grad_(False)               
 
-
-        # for modality_trunk in self.model.modality_trunks.children():
-        #     modality_trunk.requires_grad_(False)
-        # freeze vision channels
-        for params in self.model.modality_trunks[ModalityType.VISION].parameters():
-            params.requires_grad_(False)
-        for params in self.model.modality_postprocessors[ModalityType.VISION].parameters():
-            params.requires_grad_(False)
-        for params in self.model.modality_heads[ModalityType.VISION].parameters():
-            params.requires_grad_(False)
+        for modality_trunk in self.model.modality_trunks.children():
+            modality_trunk.requires_grad_(False)
+            
+        for modality_postprocessor in self.model.modality_postprocessors.children():
+            modality_postprocessor.requires_grad_(False)
         
-        for params in self.model.modality_preprocessors[ModalityType.EVENT].parameters():
-            if not load_vision_to_event:
-                params.requires_grad_(True)
-                print('unfreezing event preprocessor')
+        
+        print('freezing the original weights for the four parts, pre, head, trunk, post')
+            
+            
+        # freeze vision channels
+        # for params in self.model.modality_trunks[ModalityType.VISION].parameters():
+        #     params.requires_grad_(False)
+        # for params in self.model.modality_postprocessors[ModalityType.VISION].parameters():
+        #     params.requires_grad_(False)
+        # for params in self.model.modality_heads[ModalityType.VISION].parameters():
+        #     params.requires_grad_(False)
+        
+        # for params in self.model.modality_preprocessors[ModalityType.EVENT].parameters():
+        #     if not load_vision_to_event:
+        #         params.requires_grad_(True)
+        #         print('unfreezing event preprocessor')
         
         if lora:
-            for modality_preprocessor in self.model.modality_preprocessors.children():
-                modality_preprocessor.requires_grad_(False)
-            for modality_trunk in self.model.modality_trunks.children():
-                modality_trunk.requires_grad_(False)
+            # for modality_preprocessor in self.model.modality_preprocessors.children():
+            #     modality_preprocessor.requires_grad_(False)
+            # for modality_trunk in self.model.modality_trunks.children():
+            #     modality_trunk.requires_grad_(False)
+            
             
             # add LoRA trunks to the model
             self.model.modality_trunks.update(LoRA.apply_lora_modality_trunks(self.model.modality_trunks, rank=lora_rank,
                                                                               layer_idxs=lora_layer_idxs,
                                                                               modality_names=lora_modality_names))
             
+            # Apply LoRA only to the EVENT modality head
+            event_head = self.model.modality_heads[ModalityType.EVENT]
+            lora_event_head = LoRA.apply_lora_to_sequential_head(event_head, rank=lora_rank)
+            self.model.modality_heads[ModalityType.EVENT] = lora_event_head
+            
+            # self.model.modality_heads[ModalityType.EVENT].update(LoRA.apply_lora_heads(self.model.modality_heads[ModalityType.EVENT], rank=lora_rank))
+            
+            
             # Load LoRA checkpoint
             LoRA.load_lora_modality_trunks(self.model.modality_trunks, checkpoint_dir=lora_checkpoint_dir)
+            LoRA.load_lora_heads(self.model.modality_heads, checkpoint_dir=lora_checkpoint_dir)
+            # # Load postprocessors & heads
+            # load_module(self.model.modality_postprocessors, module_name="postprocessors",
+            #             checkpoint_dir=lora_checkpoint_dir)
+            # load_module(self.model.modality_heads, module_name="heads",
+            #             checkpoint_dir=lora_checkpoint_dir)
 
-            # Load postprocessors & heads
-            load_module(self.model.modality_postprocessors, module_name="postprocessors",
-                        checkpoint_dir=lora_checkpoint_dir)
-            load_module(self.model.modality_heads, module_name="heads",
-                        checkpoint_dir=lora_checkpoint_dir)
+        if not load_vision_to_event:
+            for params in self.model.modality_trunks[ModalityType.EVENT].parameters():
+                params.requires_grad_(True)
+            for params in self.model.modality_postprocessors[ModalityType.EVENT].parameters():
+                params.requires_grad_(True)
+            for params in self.model.modality_heads[ModalityType.EVENT].parameters():
+                params.requires_grad_(True)
+            for params in self.model.modality_preprocessors[ModalityType.EVENT].parameters():
+                params.requires_grad_(True)
+            
+            print('unfreezing event processor')
+
+
+
         # require grad for last layer of each modality head
-        elif linear_probing:
-            for modality_preprocessor in self.model.modality_preprocessors.children():
-                modality_preprocessor.requires_grad_(False)
-            for modality_trunk in self.model.modality_trunks.children():
-                modality_trunk.requires_grad_(False)
-            for modality_postprocessor in self.model.modality_postprocessors.children():
-                modality_postprocessor.requires_grad_(False)
+        # elif linear_probing:
+        #     for modality_preprocessor in self.model.modality_preprocessors.children():
+        #         modality_preprocessor.requires_grad_(False)
+        #     for modality_trunk in self.model.modality_trunks.children():
+        #         modality_trunk.requires_grad_(False)
+        #     for modality_postprocessor in self.model.modality_postprocessors.children():
+        #         modality_postprocessor.requires_grad_(False)
 
-            load_module(self.model.modality_heads, module_name="heads",
-                        checkpoint_dir=lora_checkpoint_dir)
-            for modality_head in self.model.modality_heads.children():
-                modality_head.requires_grad_(False)
-                final_layer = list(modality_head.children())[-1]
-                final_layer.requires_grad_(True)
+        #     load_module(self.model.modality_heads, module_name="heads",
+        #                 checkpoint_dir=lora_checkpoint_dir)
+        #     for modality_head in self.model.modality_heads.children():
+        #         modality_head.requires_grad_(False)
+        #         final_layer = list(modality_head.children())[-1]
+        #         final_layer.requires_grad_(True)
+        
+        
+        
+        ib_modules = {
+            "modality_preprocessors": self.model.modality_preprocessors,
+            "modality_heads": self.model.modality_heads,
+            "modality_trunks": self.model.modality_trunks,
+            "modality_postprocessors": self.model.modality_postprocessors
+        }        
+        for name, module in ib_modules.items():
+            total_params, memory_size = get_param_size(module)
+            print(f"{name}: {total_params:,} parameters, {memory_size:.2f} MB")
 
+                
     def configure_optimizers(self):
         optimizer = optim.AdamW(self.parameters(), lr=self.hparams.lr, weight_decay=self.hparams.weight_decay, 
                                 betas=self.hparams.momentum_betas)
@@ -270,11 +325,12 @@ class ImageBindTrain(L.LightningModule):
         if self.hparams.lora:
             # Save LoRA checkpoint
             LoRA.save_lora_modality_trunks(self.model.modality_trunks, checkpoint_dir=self.hparams.lora_checkpoint_dir)
-            # Save postprocessors & heads
-            save_module(self.model.modality_postprocessors, module_name="postprocessors",
-                        checkpoint_dir=self.hparams.lora_checkpoint_dir)
-            save_module(self.model.modality_heads, module_name="heads",
-                        checkpoint_dir=self.hparams.lora_checkpoint_dir)
+            LoRA.save_lora_heads(self.model.modality_heads, checkpoint_dir=self.hparams.lora_checkpoint_dir)
+            # # Save postprocessors & heads
+            # save_module(self.model.modality_postprocessors, module_name="postprocessors",
+            #             checkpoint_dir=self.hparams.lora_checkpoint_dir)
+            # save_module(self.model.modality_heads, module_name="heads",
+            #             checkpoint_dir=self.hparams.lora_checkpoint_dir)
         elif self.hparams.linear_probing:
             # Save postprocessors & heads
             save_module(self.model.modality_heads, module_name="heads",
@@ -313,7 +369,7 @@ def parse_args():
     parser.add_argument("--lora_rank", type=int, default=4, help="Rank of LoRA layers")
     parser.add_argument("--lora_checkpoint_dir", type=str, default="./.checkpoints/lora",
                         help="Directory to save LoRA checkpoint")
-    parser.add_argument("--lora_modality_names", nargs="+", type=str, default=["vision", "event"],
+    parser.add_argument("--lora_modality_names", nargs="+", type=str, default=["event"],
                         choices=["vision", "text", "audio", "thermal", "depth", "imu","event"],
                         help="Modality names to apply LoRA")
     parser.add_argument("--lora_layer_idxs", nargs="+", type=int,
@@ -470,10 +526,12 @@ if __name__ == "__main__":
     #                   max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
     #                   logger=wandb_logger, strategy='ddp_find_unused_parameters_true', **checkpointing)
 
+    
     trainer = Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
                       devices=1, deterministic=True,
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
-                      logger=wandb_logger, **checkpointing)
+                      logger=wandb_logger, **checkpointing,
+                      )
  
     if args.checkpoint_path is None:
         trainer.fit(model, train_loader, val_loader)

@@ -20,6 +20,147 @@ from torch.nn.parameter import Parameter
 from models.transformer import SimpleTransformer
 
 
+class _LoRALayerHead(nn.Module):
+    def __init__(self, w: nn.Module, w_a: nn.Module, w_b: nn.Module):
+        super().__init__()
+        self.w = w
+        self.w_a = w_a
+        self.w_b = w_b
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.w(x) + self.w_b(self.w_a(x))
+
+
+class LoRA_Head(nn.Module):
+    """Applies low-rank adaptation to a head (e.g., classification head) of a model.
+
+    Args:
+        head_model: The head model (e.g., a linear layer).
+        rank: Rank of LoRA.
+    """
+
+    def __init__(self, head_model: nn.Module, rank: int):
+        super(LoRA_Head, self).__init__()
+        assert rank > 0
+        self.head_model = head_model
+        self.rank = rank
+
+        # Freeze the original head parameters
+        for param in head_model.parameters():
+            param.requires_grad = False
+
+        # Create LoRA layers
+        self.w_a = nn.Linear(head_model.in_features, rank, bias=False)
+        self.w_b = nn.Linear(rank, head_model.out_features, bias=False)
+
+        if self.training:
+            self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        nn.init.kaiming_uniform_(self.w_a.weight, a=math.sqrt(5))
+        nn.init.zeros_(self.w_b.weight)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.head_model(x) + self.w_b(self.w_a(x))
+
+    def save_lora_parameters(self, filename: str) -> None:
+        """Saves LoRA parameters to a file."""
+        assert filename.endswith(".safetensors")
+        lora_params = {
+            "w_a": self.w_a.weight,
+            "w_b": self.w_b.weight,
+        }
+        save_file(lora_params, filename)
+
+    def load_lora_parameters(self, filename: str) -> None:
+        """Loads LoRA parameters from a file."""
+        assert filename.endswith(".safetensors")
+        with safe_open(filename, framework="pt") as f:
+            self.w_a.weight = Parameter(f.get_tensor("w_a"))
+            self.w_b.weight = Parameter(f.get_tensor("w_b"))
+
+
+
+
+
+def save_lora_heads(lora_heads: Dict[str, LoRA_Head], checkpoint_dir: str = "./.checkpoints/lora", postfix: str = "_last", extension: str = "safetensors"):
+    """Saves LoRA parameters for all heads in a dictionary."""
+    for head_name, lora_head in lora_heads.items():
+        try:
+            if isinstance(lora_head, LoRA_Head):
+                lora_head.save_lora_parameters(os.path.join(checkpoint_dir, f"lora-head-{head_name}{postfix}.{extension}"))
+                logging.info(f"Saved LoRA parameters for head {head_name} to {checkpoint_dir}.")
+        except FileNotFoundError:
+            logging.warning(f"Could not save LoRA parameters for head {head_name} to {checkpoint_dir}.")
+
+
+def load_lora_heads(lora_heads: Dict[str, LoRA_Head], checkpoint_dir: str = "./.checkpoints/lora", postfix: str = "_last", extension: str = "safetensors"):
+    """Loads LoRA parameters for all heads in a dictionary."""
+    for head_name, lora_head in lora_heads.items():
+        try:
+            if isinstance(lora_head, LoRA_Head):
+                lora_head.load_lora_parameters(os.path.join(checkpoint_dir, f"lora-head-{head_name}{postfix}.{extension}"))
+                logging.info(f"Loaded LoRA parameters for head {head_name} from {checkpoint_dir}.")
+        except FileNotFoundError:
+            logging.warning(f"Could not find LoRA parameters for head {head_name} in {checkpoint_dir}.")
+            logging.warning("If you are training the sub-model from scratch, this is expected.")
+            logging.warning("If you are loading parts of a pre-trained model, this is expected for some heads.")
+
+
+
+
+def apply_lora_to_sequential_head(sequential_head: nn.Sequential, rank: int) -> nn.Sequential:
+    """Applies LoRA to specific layers (e.g., nn.Linear) within an nn.Sequential head.
+
+    Args:
+        sequential_head: The head as an nn.Sequential module.
+        rank: Rank of LoRA.
+
+    Returns:
+        The modified nn.Sequential module with LoRA applied.
+    """
+    new_layers = []
+    for layer in sequential_head:
+        if isinstance(layer, nn.Linear):
+            # Apply LoRA to this linear layer
+            lora_layer = LoRA_Head(layer, rank)
+            new_layers.append(lora_layer)
+        else:
+            # Keep other layers unchanged
+            new_layers.append(layer)
+    return nn.Sequential(*new_layers)
+
+
+def apply_lora_heads(modality_heads: Dict[str, nn.Sequential], rank: int) -> Dict[str, nn.Sequential]:
+    """Applies LoRA to a dictionary of modality heads.
+
+    Args:
+        modality_heads: Dictionary of modality heads (nn.Sequential).
+        rank: Rank of LoRA.
+
+    Returns:
+        A dictionary of modality heads with LoRA applied.
+    """
+    return {modality_name: apply_lora_to_sequential_head(head, rank) for modality_name, head in modality_heads.items()}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 def apply_lora_modality_trunks(modality_trunks: Dict[str, SimpleTransformer], rank: int,
                                layer_idxs: Optional[Dict[SimpleNamespace, List[int]]] = None,
