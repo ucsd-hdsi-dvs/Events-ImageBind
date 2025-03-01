@@ -92,6 +92,12 @@ class ImageBindTrain(L.LightningModule):
             model_state_dict = self.model.state_dict()
             model_state_dict.update(modality_state_dict)
             self.model.load_state_dict(model_state_dict)
+        
+        
+        
+        
+        
+        
             
         
         for modality_preprocessor in self.model.modality_preprocessors.children():
@@ -105,7 +111,6 @@ class ImageBindTrain(L.LightningModule):
             
         for modality_postprocessor in self.model.modality_postprocessors.children():
             modality_postprocessor.requires_grad_(False)
-        
         
         print('freezing the original weights for the four parts, pre, head, trunk, post')
             
