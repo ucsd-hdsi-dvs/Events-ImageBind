@@ -12,6 +12,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
+from typing import Union
+
 from safetensors import safe_open
 from safetensors.torch import save_file
 from torch import Tensor
@@ -81,32 +83,62 @@ class LoRA_Head(nn.Module):
 
 
 
-
-
-def save_lora_heads(lora_heads: Dict[str, LoRA_Head], checkpoint_dir: str = "./.checkpoints/lora", postfix: str = "_last", extension: str = "safetensors"):
-    """Saves LoRA parameters for all heads in a dictionary."""
-    for head_name, lora_head in lora_heads.items():
+def save_lora_heads(
+    lora_heads: Dict[str, Union[nn.Sequential, nn.Module]], 
+    checkpoint_dir: str = "./.checkpoints/lora", 
+    postfix: str = "_last", 
+    extension: str = "safetensors"
+):
+    """Saves LoRA parameters for heads that contain a LoRA_Head layer."""
+    for head_name, head in lora_heads.items():
         try:
-            if isinstance(lora_head, LoRA_Head):
-                lora_head.save_lora_parameters(os.path.join(checkpoint_dir, f"lora-head-{head_name}{postfix}.{extension}"))
+            if hasattr(head, "__iter__"):  # Check if the head is iterable (e.g., nn.Sequential)
+                # Iterate through the layers of the Sequential head
+                for layer in head:
+                    if isinstance(layer, LoRA_Head):
+                        # Save LoRA parameters for this head
+                        layer.save_lora_parameters(os.path.join(checkpoint_dir, f"lora-head-{head_name}{postfix}.{extension}"))
+                        logging.info(f"Saved LoRA parameters for head {head_name} to {checkpoint_dir}.")
+                        break  # Stop after saving the first LoRA_Head layer
+            elif isinstance(head, LoRA_Head):
+                # Directly save LoRA parameters if the head is a LoRA_Head
+                head.save_lora_parameters(os.path.join(checkpoint_dir, f"lora-head-{head_name}{postfix}.{extension}"))
                 logging.info(f"Saved LoRA parameters for head {head_name} to {checkpoint_dir}.")
+            else:
+                # Skip heads that are not Sequential or LoRA_Head
+                logging.warning(f"Head {head_name} is not a Sequential or LoRA_Head. Skipping.")
         except FileNotFoundError:
             logging.warning(f"Could not save LoRA parameters for head {head_name} to {checkpoint_dir}.")
 
 
-def load_lora_heads(lora_heads: Dict[str, LoRA_Head], checkpoint_dir: str = "./.checkpoints/lora", postfix: str = "_last", extension: str = "safetensors"):
-    """Loads LoRA parameters for all heads in a dictionary."""
-    for head_name, lora_head in lora_heads.items():
+def load_lora_heads(
+    lora_heads: Dict[str, Union[nn.Sequential, nn.Module]], 
+    checkpoint_dir: str = "./.checkpoints/lora", 
+    postfix: str = "_last", 
+    extension: str = "safetensors"
+):
+    """Loads LoRA parameters for heads that contain a LoRA_Head layer."""
+    for head_name, head in lora_heads.items():
         try:
-            if isinstance(lora_head, LoRA_Head):
-                lora_head.load_lora_parameters(os.path.join(checkpoint_dir, f"lora-head-{head_name}{postfix}.{extension}"))
+            if isinstance(head, nn.Sequential):
+                # Iterate through the layers of the Sequential head
+                for layer in head:
+                    if isinstance(layer, LoRA_Head):
+                        # Load LoRA parameters for this head
+                        layer.load_lora_parameters(os.path.join(checkpoint_dir, f"lora-head-{head_name}{postfix}.{extension}"))
+                        logging.info(f"Loaded LoRA parameters for head {head_name} from {checkpoint_dir}.")
+                        break  # Stop after loading the first LoRA_Head layer
+            elif isinstance(head, LoRA_Head):
+                # Directly load LoRA parameters if the head is a LoRA_Head
+                head.load_lora_parameters(os.path.join(checkpoint_dir, f"lora-head-{head_name}{postfix}.{extension}"))
                 logging.info(f"Loaded LoRA parameters for head {head_name} from {checkpoint_dir}.")
+            else:
+                # Skip heads that are not Sequential or LoRA_Head
+                logging.warning(f"Head {head_name} is not a Sequential or LoRA_Head. Skipping.")
         except FileNotFoundError:
             logging.warning(f"Could not find LoRA parameters for head {head_name} in {checkpoint_dir}.")
             logging.warning("If you are training the sub-model from scratch, this is expected.")
             logging.warning("If you are loading parts of a pre-trained model, this is expected for some heads.")
-
-
 
 
 def apply_lora_to_sequential_head(sequential_head: nn.Sequential, rank: int) -> nn.Sequential:
