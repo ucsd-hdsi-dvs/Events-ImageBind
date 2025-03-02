@@ -317,8 +317,8 @@ class ImageBindTrain(L.LightningModule):
                 self.log(mode + "_acc_mean_pos_te", 1 + sim_argsort.float().mean(), prog_bar=True,
                         on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
 
-
-        if self.use_txt and mode == "val":
+        # if self.use_txt and mode == "val":
+        if self.use_txt:
             feats_a_c_tensor = torch.cat([feats_a_tensor, feats_c_tensor], dim=0)
             feats_tensors_ac = [feats_a_c_tensor]
             temperatures = [self.hparams.temperature]
