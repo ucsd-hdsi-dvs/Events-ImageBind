@@ -14,8 +14,12 @@ numpy>=1.19
 matplotlib
 types-regex
 mayavi
+safetensors
 cartopy
 lightning==1.8.6 
 torchmetrics==0.11.4
 pydantic<2
 websockets
+
+
+# pip install torchvision==0.14.1+cu117 -f https://download.pytorch.org/whl/torch_stable.html
