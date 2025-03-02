@@ -38,8 +38,12 @@ from models import imagebind_model
 from models import lora as LoRA
 from models.imagebind_model import ModalityType, load_module, save_module
 from models.events import EventModel
-import json
+
 logging.basicConfig(level=logging.INFO, force=True)
+
+
+import time,json
+import numpy as np
 
 # Logging settings
 LOG_ON_STEP = True
@@ -217,8 +221,8 @@ class ImageBindTrain(L.LightningModule):
         # feats_a_tensor = torch.cat([list(dict_.values())[0] for dict_ in feats_a], dim=0)
         with torch.no_grad():
             feats_a_tensor=list(self.model({class_a[0]: data_a}).values())[0]
-            if self.use_txt:
-                feats_c_tensor=list(self.model({class_c[0]: data_c}).values())[0]
+            # if self.use_txt:
+            #     feats_c_tensor=list(self.model({class_c[0]: data_c}).values())[0]
 
         # class_b could be any modality
         # feats_b = [self.model({class_b[idx]: data_b_i.unsqueeze(0)}) for idx, data_b_i in enumerate(data_b)]
@@ -283,77 +287,78 @@ class ImageBindTrain(L.LightningModule):
         self.log(mode + "_loss", dual_nll, prog_bar=True,
                  on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
         
-        if self.use_txt and mode == "val":
-            feats_c_b_tensor = torch.cat([feats_c_tensor, feats_b_tensor], dim=0)
-            feats_tensors_c = [feats_c_b_tensor]
-            temperatures = [self.hparams.temperature]
-            contrast = ["cross"]
+        # if self.use_txt and mode == "val":
+        #     feats_c_b_tensor = torch.cat([feats_c_tensor, feats_b_tensor], dim=0)
+        #     feats_tensors_c = [feats_c_b_tensor]
+        #     temperatures = [self.hparams.temperature]
+        #     contrast = ["cross"]
             
-            for feats_idx, feats_tensor in enumerate(feats_tensors_c):
-                # Calculate cosine similarity
-                cos_sim = F.cosine_similarity(feats_tensor[:, None, :], feats_tensor[None, :, :], dim=-1)
-                # Mask out cosine similarity to itself
-                self_mask = torch.eye(cos_sim.shape[0], dtype=torch.bool, device=cos_sim.device)
-                cos_sim.masked_fill_(self_mask, -9e15)
-                # Find positive example -> batch_size//2 away from the original example
-                pos_mask = self_mask.roll(shifts=cos_sim.shape[0] // 2, dims=0)
-                # InfoNCE loss
-                cos_sim = cos_sim / temperatures[feats_idx]
+        #     for feats_idx, feats_tensor in enumerate(feats_tensors_c):
+        #         # Calculate cosine similarity
+        #         cos_sim = F.cosine_similarity(feats_tensor[:, None, :], feats_tensor[None, :, :], dim=-1)
+        #         # Mask out cosine similarity to itself
+        #         self_mask = torch.eye(cos_sim.shape[0], dtype=torch.bool, device=cos_sim.device)
+        #         cos_sim.masked_fill_(self_mask, -9e15)
+        #         # Find positive example -> batch_size//2 away from the original example
+        #         pos_mask = self_mask.roll(shifts=cos_sim.shape[0] // 2, dims=0)
+        #         # InfoNCE loss
+        #         cos_sim = cos_sim / temperatures[feats_idx]
 
-                # Get ranking position of positive example
-                comb_sim = torch.cat(
-                    [cos_sim[pos_mask][:, None], cos_sim.masked_fill(pos_mask, -9e15)],  # First position positive example
-                    dim=-1,
-                )
-                sim_argsort = comb_sim.argsort(dim=-1, descending=True).argmin(dim=-1)
-                # Logging ranking metrics
-                self.log(mode + "_acc_top1_te", (sim_argsort == 0).float().mean(), prog_bar=True,
-                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
-                self.log(mode + "_acc_top5_te", (sim_argsort < 5).float().mean(), prog_bar=True,
-                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
-                self.log(mode + "_acc_top10_te", (sim_argsort < 10).float().mean(), prog_bar=True,
-                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+        #         # Get ranking position of positive example
+        #         comb_sim = torch.cat(
+        #             [cos_sim[pos_mask][:, None], cos_sim.masked_fill(pos_mask, -9e15)],  # First position positive example
+        #             dim=-1,
+        #         )
+        #         sim_argsort = comb_sim.argsort(dim=-1, descending=True).argmin(dim=-1)
+        #         # Logging ranking metrics
+        #         self.log(mode + "_acc_top1_te", (sim_argsort == 0).float().mean(), prog_bar=True,
+        #                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+        #         self.log(mode + "_acc_top5_te", (sim_argsort < 5).float().mean(), prog_bar=True,
+        #                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+        #         self.log(mode + "_acc_top10_te", (sim_argsort < 10).float().mean(), prog_bar=True,
+        #                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
                 
-                self.log(mode + "_acc_mean_pos_te", 1 + sim_argsort.float().mean(), prog_bar=True,
-                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+        #         self.log(mode + "_acc_mean_pos_te", 1 + sim_argsort.float().mean(), prog_bar=True,
+        #                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
 
         # if self.use_txt and mode == "val":
-        if self.use_txt:
-            feats_a_c_tensor = torch.cat([feats_a_tensor, feats_c_tensor], dim=0)
-            feats_tensors_ac = [feats_a_c_tensor]
-            temperatures = [self.hparams.temperature]
-            contrast = ["cross"]
+        # if self.use_txt:
+        #     feats_a_c_tensor = torch.cat([feats_a_tensor, feats_c_tensor], dim=0)
+        #     feats_tensors_ac = [feats_a_c_tensor]
+        #     temperatures = [self.hparams.temperature]
+        #     contrast = ["cross"]
             
-            for feats_idx, feats_tensor in enumerate(feats_tensors_ac):
-                # Calculate cosine similarity
-                cos_sim = F.cosine_similarity(feats_tensor[:, None, :], feats_tensor[None, :, :], dim=-1)
-                # Mask out cosine similarity to itself
-                self_mask = torch.eye(cos_sim.shape[0], dtype=torch.bool, device=cos_sim.device)
-                cos_sim.masked_fill_(self_mask, -9e15)
-                # Find positive example -> batch_size//2 away from the original example
-                pos_mask = self_mask.roll(shifts=cos_sim.shape[0] // 2, dims=0)
-                # InfoNCE loss
-                cos_sim = cos_sim / temperatures[feats_idx]
+        #     for feats_idx, feats_tensor in enumerate(feats_tensors_ac):
+        #         # Calculate cosine similarity
+        #         cos_sim = F.cosine_similarity(feats_tensor[:, None, :], feats_tensor[None, :, :], dim=-1)
+        #         # Mask out cosine similarity to itself
+        #         self_mask = torch.eye(cos_sim.shape[0], dtype=torch.bool, device=cos_sim.device)
+        #         cos_sim.masked_fill_(self_mask, -9e15)
+        #         # Find positive example -> batch_size//2 away from the original example
+        #         pos_mask = self_mask.roll(shifts=cos_sim.shape[0] // 2, dims=0)
+        #         # InfoNCE loss
+        #         cos_sim = cos_sim / temperatures[feats_idx]
 
-                # Get ranking position of positive example
-                comb_sim = torch.cat(
-                    [cos_sim[pos_mask][:, None], cos_sim.masked_fill(pos_mask, -9e15)],  # First position positive example
-                    dim=-1,
-                )
-                sim_argsort = comb_sim.argsort(dim=-1, descending=True).argmin(dim=-1)
-                # Logging ranking metrics
-                self.log(mode + "_acc_top1_it", (sim_argsort == 0).float().mean(), prog_bar=True,
-                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
-                self.log(mode + "_acc_top5_it", (sim_argsort < 5).float().mean(), prog_bar=True,
-                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
-                self.log(mode + "_acc_top10_it", (sim_argsort < 10).float().mean(), prog_bar=True,
-                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+        #         # Get ranking position of positive example
+        #         comb_sim = torch.cat(
+        #             [cos_sim[pos_mask][:, None], cos_sim.masked_fill(pos_mask, -9e15)],  # First position positive example
+        #             dim=-1,
+        #         )
+        #         sim_argsort = comb_sim.argsort(dim=-1, descending=True).argmin(dim=-1)
+        #         # Logging ranking metrics
+        #         self.log(mode + "_acc_top1_it", (sim_argsort == 0).float().mean(), prog_bar=True,
+        #                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+        #         self.log(mode + "_acc_top5_it", (sim_argsort < 5).float().mean(), prog_bar=True,
+        #                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+        #         self.log(mode + "_acc_top10_it", (sim_argsort < 10).float().mean(), prog_bar=True,
+        #                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
                 
-                self.log(mode + "_acc_mean_pos_it", 1 + sim_argsort.float().mean(), prog_bar=True,
-                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+        #         self.log(mode + "_acc_mean_pos_it", 1 + sim_argsort.float().mean(), prog_bar=True,
+        #                 on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
         
         
         return dual_nll
+        
 
     def training_step(self, batch, batch_idx):
         return self.info_nce_loss(batch, mode="train")
@@ -375,6 +380,70 @@ class ImageBindTrain(L.LightningModule):
             # Save postprocessors & heads
             save_module(self.model.modality_heads, module_name="heads",
                         checkpoint_dir=self.hparams.lora_checkpoint_dir)
+
+        # print('start evaluation, on_validation_epoch_end')
+        # dataloader = self.trainer.val_dataloaders[0]
+        # acc_retrival_1_im_e, acc_retrival_5_im_e, acc_retrival_1_te_e, acc_retrival_5_te_e = self.evaluate_one_epoch(dataloader)
+        # self.log('val_acc1_im_e', acc_retrival_1_im_e)
+        # self.log('val_acc5_im_e', acc_retrival_5_im_e)
+        # self.log('val_acc1_te_e', acc_retrival_1_te_e)
+        # self.log('val_acc5_te_e', acc_retrival_5_te_e)
+        # print('val_acc1_im_e', acc_retrival_1_im_e, 'val_acc5_im_e', acc_retrival_5_im_e, 'val_acc1_te_e', acc_retrival_1_te_e, 'val_acc5_te_e', acc_retrival_5_te_e)
+
+
+    # def evaluate_one_epoch(self, dataloader):
+    #     device = next(self.model.parameters()).device
+    #     total, hit1_im_e, hit5_im_e = 0, 0, 0
+    #     self.model.eval().float()
+    #     all_image_features = []
+    #     all_event_features = []
+    #     all_labels = []
+
+    #     for idx, (rgb_embedding, class_a, fler_embedding, class_b, text_embedding, class_c) in enumerate(dataloader):
+    #         rgb_embedding = rgb_embedding.to(device)
+    #         fler_embedding = fler_embedding.to(device)
+    #         text_embedding = text_embedding.to(device)
+
+    #         with torch.no_grad():
+    #             image_features = list(self.model({class_a[0]: rgb_embedding}).values())[0]
+    #             event_features = list(self.model({class_b[0]: fler_embedding}).values())[0]
+    #             text_features = list(self.model({class_c[0]: text_embedding}).values())[0]
+
+    #             all_image_features.append(image_features)
+    #             all_event_features.append(event_features)
+    #             all_labels.extend(text_embedding.cpu().detach().numpy())
+
+    #         if (idx + 1) % 10 == 0:  # Log every 10 batches
+    #             print(f'Processed {idx + 1}/{len(dataloader)} batches')
+
+    #     all_image_features = torch.cat(all_image_features, dim=0)
+    #     all_event_features = torch.cat(all_event_features, dim=0)
+
+    #     # Image-to-Event Retrieval
+    #     logits_im_ev = self.logit_scale * all_image_features @ all_event_features.t()
+    #     scores_im_ev = logits_im_ev.softmax(dim=-1)
+
+    #     for i in range(len(all_labels)):
+    #         scores_im_ev_i = scores_im_ev[i]
+    #         topk_5_im_e = set(scores_im_ev_i.topk(5)[1].cpu().detach().numpy())
+    #         label_i = all_labels[i]
+
+    #         total += 1
+    #         if all_labels[scores_im_ev_i.topk(1)[1].cpu().detach().numpy()[0]] == label_i:
+    #             hit1_im_e += 1
+    #         if label_i in topk_5_im_e:
+    #             hit5_im_e += 1
+
+    #     acc_retrival_1_im_e = hit1_im_e / total * 100. if total != 0 else 0
+    #     acc_retrival_5_im_e = hit5_im_e / total * 100. if total != 0 else 0
+
+    #     print(f'Accuracy on validation set: im_ev_top1={acc_retrival_1_im_e:.2f}%, im_ev_top5={acc_retrival_5_im_e:.2f}%')
+
+    #     return acc_retrival_1_im_e, acc_retrival_5_im_e
+
+
+
+
 
 
 def parse_args():
