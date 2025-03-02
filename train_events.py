@@ -316,6 +316,41 @@ class ImageBindTrain(L.LightningModule):
                 
                 self.log(mode + "_acc_mean_pos_te", 1 + sim_argsort.float().mean(), prog_bar=True,
                         on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+
+
+        if self.use_txt and mode == "val":
+            feats_a_c_tensor = torch.cat([feats_a_tensor, feats_c_tensor], dim=0)
+            feats_tensors_ac = [feats_a_c_tensor]
+            temperatures = [self.hparams.temperature]
+            contrast = ["cross"]
+            
+            for feats_idx, feats_tensor in enumerate(feats_tensors_ac):
+                # Calculate cosine similarity
+                cos_sim = F.cosine_similarity(feats_tensor[:, None, :], feats_tensor[None, :, :], dim=-1)
+                # Mask out cosine similarity to itself
+                self_mask = torch.eye(cos_sim.shape[0], dtype=torch.bool, device=cos_sim.device)
+                cos_sim.masked_fill_(self_mask, -9e15)
+                # Find positive example -> batch_size//2 away from the original example
+                pos_mask = self_mask.roll(shifts=cos_sim.shape[0] // 2, dims=0)
+                # InfoNCE loss
+                cos_sim = cos_sim / temperatures[feats_idx]
+
+                # Get ranking position of positive example
+                comb_sim = torch.cat(
+                    [cos_sim[pos_mask][:, None], cos_sim.masked_fill(pos_mask, -9e15)],  # First position positive example
+                    dim=-1,
+                )
+                sim_argsort = comb_sim.argsort(dim=-1, descending=True).argmin(dim=-1)
+                # Logging ranking metrics
+                self.log(mode + "_acc_top1_it", (sim_argsort == 0).float().mean(), prog_bar=True,
+                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                self.log(mode + "_acc_top5_it", (sim_argsort < 5).float().mean(), prog_bar=True,
+                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                self.log(mode + "_acc_top10_it", (sim_argsort < 10).float().mean(), prog_bar=True,
+                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
+                
+                self.log(mode + "_acc_mean_pos_it", 1 + sim_argsort.float().mean(), prog_bar=True,
+                        on_step=LOG_ON_STEP, on_epoch=LOG_ON_EPOCH, batch_size=self.hparams.batch_size)
         
         
         return dual_nll
@@ -533,6 +568,7 @@ if __name__ == "__main__":
 
     
     trainer = Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
+                    #   num_sanity_val_steps=291,
                       devices=1, deterministic=True,
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
                       logger=wandb_logger, **checkpointing,

@@ -248,7 +248,7 @@ def process_file_paths(file_path):
 
     # Convert bin paths to npz paths
     npz_files = [
-        f"/eastdata/datasets/imagebind_ncaltech101/{bin_path.split('/')[1]}/image_{bin_path.split('_')[-1]}"
+        f"/eastdata/datasets/imagebind_ncaltech101/March_1/{bin_path.split('/')[1]}/image_{bin_path.split('_')[-1]}"
         .replace('.bin', '.png')
         for bin_path in bin_files
     ]
