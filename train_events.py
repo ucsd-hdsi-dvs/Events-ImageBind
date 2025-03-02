@@ -83,7 +83,7 @@ class ImageBindTrain(L.LightningModule):
         # Load full pretrained ImageBind model
         self.model = imagebind_model.imagebind_huge(pretrained=True)
 
-        self.use_txt=True
+        self.use_txt=False
         # apply event layer
         eventmodel=EventModel()
         eventmodel.apply_event_layers(self.model, load_vision_to_event)
