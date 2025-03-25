@@ -157,11 +157,19 @@ class RGBLikeCaltech(Dataset):
     def __init__ (self, data_root, mode, transform=None, frame_size=(224,224), num_bins=20):
         self.frame_size = frame_size
         self.num_bins = num_bins
-        self.transform = transforms.Compose([
-            transforms.ToTensor(),
-            resize_pad,
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])   
+        self.transform = transforms.Compose(
+                [
+                    transforms.Resize(
+                        224, interpolation=transforms.InterpolationMode.BICUBIC
+                    ),
+                    transforms.CenterCrop(224),
+                    transforms.ToTensor(),
+                    transforms.Normalize(
+                        mean=(0.48145466, 0.4578275, 0.40821073),
+                        std=(0.26862954, 0.26130258, 0.27577711),
+                    ),
+                ]
+            )
 
         # with open(data_root, 'r') as f:
         #     paths = json.load(f)
