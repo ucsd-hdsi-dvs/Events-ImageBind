@@ -644,7 +644,7 @@ if __name__ == "__main__":
 
     
     trainer = Trainer(accelerator="gpu",
-                    #   num_sanity_val_steps=291,
+                    #   num_sanity_val_steps=0,
                       devices=1, deterministic=True,
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
                       logger=wandb_logger, **checkpointing,

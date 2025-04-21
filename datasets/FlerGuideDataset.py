@@ -106,7 +106,6 @@ class FlerGuide(Dataset):
         frame1 = self.transform(frame1)
         # stack frame0 and frame1
         frame = torch.stack((frame0, frame1), dim=1) 
-        print('frame.shape', frame.shape)
         
         # print('rgb, voxel', rgb.shape, voxel.shape)
         return frame, model_mod.ModalityType.VISION, FLER, model_mod.ModalityType.EVENT
