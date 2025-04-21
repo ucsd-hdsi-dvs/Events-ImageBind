@@ -32,7 +32,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, ConcatDataset
 import torchvision
 from torchvision import transforms
-from pytorch_lightning.strategies import DDPStrategy
+# from pytorch_lightning.strategies import DDPStrategy
 
 from models import imagebind_model
 from models import lora as LoRA
@@ -213,7 +213,7 @@ class ImageBindTrain(L.LightningModule):
         return [optimizer], [lr_scheduler]
 
     def info_nce_loss(self, batch, mode="train"):
-        data_a, class_a, data_b, class_b, data_c, class_c = batch
+        data_a, class_a, data_b, class_b= batch
         
 
         # class_a is always "vision" according to ImageBind
@@ -453,7 +453,7 @@ def parse_args():
     # parser.add_argument("--datasets_dir", type=str, default="./.datasets",
     #                     help="Directory containing the datasets")
     parser.add_argument("--load_vision_to_event", action="store_true", help="Load vision to event layers")
-    parser.add_argument("--datasets", type=str, nargs="+", default=["rgb_like_caltech"], choices=["dreambooth","event","mvsce"],
+    parser.add_argument("--datasets", type=str, nargs="+", default=["fler_guide"], choices=["dreambooth","event","mvsce"],
                         help="Datasets to use for training and validation")
     parser.add_argument("--full_model_checkpoint_dir", type=str, default="./.checkpoints/full",
                         help="Directory to save the full model checkpoints")
@@ -571,6 +571,11 @@ if __name__ == "__main__":
         train_datasets.append(RGBLikeCaltech(data_root='/eastdata/datasets/N-Caltech101/paths.json', mode='train'))
         test_datasets.append(RGBLikeCaltech(data_root='/eastdata/datasets/N-Caltech101/paths.json', mode= 'test'))
 
+    if 'fler_guide' in args.datasets:
+        from datasets.FlerGuideDataset import FlerGuide
+        train_datasets.append(FlerGuide(mode='train'))
+        test_datasets.append(FlerGuide(mode= 'test'))
+
     # add event dataset
     if len(args.datasets) == 1:
         train_dataset = train_datasets[0]
@@ -635,8 +640,10 @@ if __name__ == "__main__":
     #                   max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,
     #                   logger=wandb_logger, strategy='ddp_find_unused_parameters_true', **checkpointing)
 
+
+
     
-    trainer = Trainer(accelerator="gpu" if "cuda" in device_name else "cpu",
+    trainer = Trainer(accelerator="gpu",
                     #   num_sanity_val_steps=291,
                       devices=1, deterministic=True,
                       max_epochs=args.max_epochs, gradient_clip_val=args.gradient_clip_val,

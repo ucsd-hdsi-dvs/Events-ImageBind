@@ -1,23 +1,24 @@
-import os
-from typing import Optional, Callable
+# import os
+# from typing import Optional, Callable
 
-from sklearn.model_selection import train_test_split
+# from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 import torch
 import models.imagebind_model as model_mod
 from torchvision import transforms
 import pickle as pkl
-import os.path as op
-import numpy as np
+# import os.path as op
+# import numpy as np
 from PIL import Image
-import json
-import cv2
-import random
-from datasets.utils.events_utils import gen_discretized_event_volume
-from data import load_and_transform_text_no_device
+import pickle as pkl
+# import json
+# import cv2
+# import random
+# from datasets.utils.events_utils import gen_discretized_event_volume
+# from data import load_and_transform_text_no_device
 
-from tqdm import tqdm
-from numpy_groupies import aggregate
+# from tqdm import tqdm
+# from numpy_groupies import aggregate
 
 
 def resize_pad(frame, size=224):
@@ -58,10 +59,9 @@ def resize_pad(frame, size=224):
     return frame
 
 
-class RGBLikeCaltech(Dataset):
-    def __init__ (self, data_root, mode, transform=None, frame_size=(224,224), num_bins=20):
-        self.frame_size = frame_size
-        self.num_bins = num_bins
+class FlerGuide(Dataset):
+    def __init__ (self, mode, transform=None):
+
         self.transform = transforms.Compose(
                 [
                     transforms.Resize(
@@ -76,51 +76,39 @@ class RGBLikeCaltech(Dataset):
                 ]
             )
 
-        # with open(data_root, 'r') as f:
-        #     paths = json.load(f)
-        # train_paths, test_paths = train_test_split(paths, test_size=0.2, random_state=42)
         
+        with open("/eastdata/datasets/sd-data/fler-guide/train_paths.pkl", 'rb') as f:
+            train_paths = pkl.load(f)
+        
+        with open("/eastdata/datasets/sd-data/fler-guide/val_paths.pkl", 'rb') as f:
+            test_paths = pkl.load(f)
 
-        eventbind_train = "/eastdata/datasets/N-Caltech101/Caltech101_train.txt"
-        eventbind_val = "/eastdata/datasets/N-Caltech101/Caltech101_val.txt"
-
-        
-        train_paths, test_paths = process_file_paths(eventbind_train), process_file_paths(eventbind_val)
-        
-        # Open the file and load its contents
-        with open('/eastdata/datasets/N-Caltech101/Caltech101_classnames.json', 'r') as file:
-            self.classnames_dict= json.load(file)
-            
         if mode == 'train':
-            self.data_root, self.frame_root = train_paths[0], train_paths[1]
+            self.data_root, self.frame0_root, self.frame1_root = train_paths['fler'], train_paths['gray0'], train_paths['gray1']
         elif mode == 'test':
-            self.data_root, self.frame_root = test_paths[0], test_paths[1]
+            self.data_root, self.frame0_root, self.frame1_root = test_paths['fler'], test_paths['gray0'], test_paths['gray1']
 
     def __len__(self):
         return len(self.data_root)
     
     def __getitem__(self, idx):
         data_path = self.data_root[idx]
-        rgb_path = self.frame_root[idx]
-        label_str=data_path.split('/')[-2]
-        label_str= 'A sketch image of a ' + label_str
-        label_str=load_and_transform_text_no_device([label_str])
-        # print('shape of label_str', label_str.shape)
-        label_str=label_str.squeeze(0)
-        # label_idx = int(self.classnames_dict[label_str])
-        
+        frame0_path = self.frame0_root[idx]
+        frame1_path = self.frame1_root[idx]
+
         # read a png file
         FLER = Image.open(data_path).convert('RGB')
-        rgb = Image.open(rgb_path).convert('RGB')
-        
-        rgb = self.transform(rgb)
-        # rgb = rgb.unsqueeze(1)
-        # rgb = rgb.repeat(1, 2, 1, 1)
-        
+        frame0 = Image.open(frame0_path).convert('L').convert('RGB')
+        frame1 = Image.open(frame1_path).convert('L').convert('RGB')
         
         FLER = self.transform(FLER)
+        frame0 = self.transform(frame0)
+        frame1 = self.transform(frame1)
+        # stack frame0 and frame1
+        frame = torch.stack((frame0, frame1), dim=1) 
+        print('frame.shape', frame.shape)
         
         # print('rgb, voxel', rgb.shape, voxel.shape)
-        return rgb, model_mod.ModalityType.VISION, FLER, model_mod.ModalityType.EVENT, label_str, model_mod.ModalityType.TEXT
+        return frame, model_mod.ModalityType.VISION, FLER, model_mod.ModalityType.EVENT
 
 

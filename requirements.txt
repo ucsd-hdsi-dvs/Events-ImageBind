@@ -2,7 +2,7 @@ torch==1.13.1
 # torchvision  # because torch version already specific, the right torchvision will be derived automatically
 torchaudio==0.13.1  # because torch version already specific, the right torchaudio will be derived automatically
 pytorchvideo @ git+https://github.com/facebookresearch/pytorchvideo.git@28fe037d212663c6a24f373b94cc5d478c8c1a1d
-torchvision==0.14.1+cu117 -f https://download.pytorch.org/whl/torch_stable.html
+# torchvision==0.14.1+cu117 -f https://download.pytorch.org/whl/torch_stable.html
 timm==0.6.7
 ftfy
 regex
@@ -15,11 +15,15 @@ matplotlib
 types-regex
 mayavi
 safetensors
-cartopy
+# cartopy==0.24.0
 lightning==1.8.6 
 torchmetrics==0.11.4
 pydantic<2
 websockets
+wandb==0.19.9
 
 
-# pip install torchvision==0.14.1+cu117 -f https://download.pytorch.org/whl/torch_stable.html
+# 1. pip install torchvision==0.14.1+cu117 -f https://download.pytorch.org/whl/torch_stable.html
+# 2. pip install -r requirements.txt
+# 3. pip install orderly-set==5.3.0 
+# 4. pip install --upgrade --force-reinstall --index-url https://download.pytorch.org/whl/cu117 torch torchvision torchaudio
