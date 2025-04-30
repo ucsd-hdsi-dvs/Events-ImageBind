@@ -160,6 +160,18 @@ class ImageBindTrain(L.LightningModule):
             #             checkpoint_dir=lora_checkpoint_dir)
             # load_module(self.model.modality_heads, module_name="heads",
             #             checkpoint_dir=lora_checkpoint_dir)
+        
+        else:
+            for params in self.model.modality_trunks[ModalityType.EVENT].parameters():
+                params.requires_grad_(True)
+            for params in self.model.modality_postprocessors[ModalityType.EVENT].parameters():
+                params.requires_grad_(True)
+            for params in self.model.modality_heads[ModalityType.EVENT].parameters():
+                params.requires_grad_(True)
+            for params in self.model.modality_preprocessors[ModalityType.EVENT].parameters():
+                params.requires_grad_(True)
+            
+            print('unfreezing event processor')
 
         if not load_vision_to_event:
             for params in self.model.modality_trunks[ModalityType.EVENT].parameters():
